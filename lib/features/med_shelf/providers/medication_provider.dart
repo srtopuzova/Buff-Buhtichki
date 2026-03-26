@@ -76,9 +76,36 @@ class MedicationProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateQuantity(String medicationId, int newQuantity) async {
+  Future<bool> addBatch({
+    required String medicationId,
+    required MedicationBatch batch,
+    required String medicationName,
+  }) async {
     try {
-      await _service.updateQuantity(medicationId, newQuantity);
+      await _service.addBatch(
+        medicationId: medicationId,
+        batch: batch,
+        medicationName: medicationName,
+      );
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> removeBatch({
+    required String medicationId,
+    required String batchId,
+    required List<MedicationBatch> currentBatches,
+  }) async {
+    try {
+      await _service.removeBatch(
+        medicationId: medicationId,
+        batchId: batchId,
+        currentBatches: currentBatches,
+      );
       return true;
     } catch (e) {
       _errorMessage = e.toString();

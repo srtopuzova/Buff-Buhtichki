@@ -17,11 +17,11 @@ class MedicationService {
   final _uuid = const Uuid();
   final _notifications = NotificationService();
 
-  CollectionReference<Map<String, dynamic>> _col(String userId) =>
+  CollectionReference<Map<String, dynamic>> get _col =>
       _firestore.collection(AppConstants.medicationsCollection);
 
   Query<Map<String, dynamic>> _userQuery(String userId) =>
-      _col(userId).where('userId', isEqualTo: userId);
+      _col.where('userId', isEqualTo: userId);
 
   Stream<List<MedicationModel>> watchMedications(String userId) {
     return _userQuery(userId).snapshots().map((snap) {
@@ -65,16 +65,15 @@ class MedicationService {
       updatedAt: now,
     );
 
-    await _firestore
-        .collection(AppConstants.medicationsCollection)
-        .doc(id)
-        .set(med.toFirestore());
+    await _col.doc(id).set(med.toFirestore());
 
-    await _notifications.scheduleExpiryNotifications(
-      medicationId: id,
-      medicationName: med.name,
-      expiryDate: med.expiryDate,
-    );
+    for (final batch in med.batches) {
+      await _notifications.scheduleExpiryNotificationsForBatch(
+        batchId: batch.id,
+        medicationName: med.name,
+        expiryDate: batch.expiryDate,
+      );
+    }
 
     return med;
   }
@@ -84,7 +83,11 @@ class MedicationService {
     String? imageUrl = medication.imageUrl;
 
     if (imageFile != null) {
-      imageUrl = await _uploadImage(imageFile, medication.id);
+      try {
+        imageUrl = await _uploadImage(imageFile, medication.id);
+      } catch (e) {
+        debugPrint('Image upload skipped: $e');
+      }
     }
 
     final updated = medication.copyWith(
@@ -92,40 +95,77 @@ class MedicationService {
       updatedAt: DateTime.now(),
     );
 
-    await _firestore
-        .collection(AppConstants.medicationsCollection)
-        .doc(medication.id)
-        .update(updated.toFirestore());
+    await _col.doc(medication.id).update(updated.toFirestore());
 
-    await _notifications.scheduleExpiryNotifications(
-      medicationId: medication.id,
-      medicationName: updated.name,
-      expiryDate: updated.expiryDate,
-    );
-  }
-
-  Future<void> updateQuantity(String medicationId, int newQuantity) async {
-    await _firestore
-        .collection(AppConstants.medicationsCollection)
-        .doc(medicationId)
-        .update({
-      'quantity': newQuantity,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
+    for (final batch in updated.batches) {
+      await _notifications.scheduleExpiryNotificationsForBatch(
+        batchId: batch.id,
+        medicationName: updated.name,
+        expiryDate: batch.expiryDate,
+      );
+    }
   }
 
   Future<void> deleteMedication(String medicationId) async {
-    await _notifications.cancelExpiryNotifications(medicationId);
-    await _firestore
-        .collection(AppConstants.medicationsCollection)
-        .doc(medicationId)
-        .delete();
-    // Attempt to delete image
+    // Cancel notifications for all batches before deleting
+    try {
+      final doc = await _col.doc(medicationId).get();
+      if (doc.exists) {
+        final med = MedicationModel.fromFirestore(doc);
+        for (final batch in med.batches) {
+          await _notifications.cancelExpiryNotificationsForBatch(batch.id);
+        }
+      }
+    } catch (_) {}
+
+    await _col.doc(medicationId).delete();
+
     try {
       await _storage
           .ref('${AppConstants.medicationImagesPath}/$medicationId.jpg')
           .delete();
     } catch (_) {}
+  }
+
+  /// Add a new box to an existing medication entry.
+  Future<void> addBatch({
+    required String medicationId,
+    required MedicationBatch batch,
+    required String medicationName,
+  }) async {
+    final doc = await _col.doc(medicationId).get();
+    if (!doc.exists) return;
+
+    final med = MedicationModel.fromFirestore(doc);
+    final updatedBatches = [...med.batches, batch];
+
+    await _col.doc(medicationId).update({
+      'batches': updatedBatches.map((b) => b.toMap()).toList(),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+
+    await _notifications.scheduleExpiryNotificationsForBatch(
+      batchId: batch.id,
+      medicationName: medicationName,
+      expiryDate: batch.expiryDate,
+    );
+  }
+
+  /// Remove a box from an existing medication entry.
+  Future<void> removeBatch({
+    required String medicationId,
+    required String batchId,
+    required List<MedicationBatch> currentBatches,
+  }) async {
+    final updatedBatches =
+        currentBatches.where((b) => b.id != batchId).toList();
+
+    await _col.doc(medicationId).update({
+      'batches': updatedBatches.map((b) => b.toMap()).toList(),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+
+    await _notifications.cancelExpiryNotificationsForBatch(batchId);
   }
 
   Future<String> _uploadImage(File imageFile, String id) async {

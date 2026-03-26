@@ -82,6 +82,42 @@ class NotificationService {
     }
   }
 
+  // ─── Per-batch expiry notifications ──────────────────────────────────────
+
+  /// Schedule expiry notifications for a single box (batch).
+  Future<void> scheduleExpiryNotificationsForBatch({
+    required String batchId,
+    required String medicationName,
+    required DateTime expiryDate,
+  }) async {
+    await cancelExpiryNotificationsForBatch(batchId);
+
+    for (final days in AppConstants.expiryWarningDays) {
+      final notifyAt = expiryDate.subtract(Duration(days: days));
+      if (notifyAt.isBefore(DateTime.now())) continue;
+
+      final id = _expiryNotificationId(batchId, days);
+      final title = days == 0
+          ? '$medicationName expires today!'
+          : '$medicationName expires in $days day${days == 1 ? '' : 's'}';
+
+      await _scheduleNotification(
+        id: id,
+        title: title,
+        body: 'Check your MedShelf and restock if needed.',
+        scheduledDate: tz.TZDateTime.from(notifyAt, tz.local),
+        channelId: 'expiry_channel',
+        channelName: 'Expiry Reminders',
+      );
+    }
+  }
+
+  Future<void> cancelExpiryNotificationsForBatch(String batchId) async {
+    for (final days in AppConstants.expiryWarningDays) {
+      await _plugin.cancel(_expiryNotificationId(batchId, days));
+    }
+  }
+
   // ─── Dose notifications ──────────────────────────────────────────────────
 
   /// Schedule a daily dose reminder at [hour]:[minute].

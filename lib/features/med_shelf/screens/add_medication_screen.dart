@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import 'package:medshelf/core/theme/app_colors.dart';
 import 'package:medshelf/core/utils/date_helpers.dart';
 import 'package:medshelf/core/utils/validators.dart';
@@ -136,6 +137,11 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
 
     setState(() => _isSaving = true);
 
+    final batch = MedicationBatch(
+      id: const Uuid().v4(),
+      expiryDate: _expiryDate!,
+      quantity: int.tryParse(_quantityCtrl.text.trim()) ?? 1,
+    );
     final medication = MedicationModel(
       id: '',
       userId: '',
@@ -147,8 +153,7 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
       manufacturer: _manufacturerCtrl.text.trim().isEmpty
           ? null
           : _manufacturerCtrl.text.trim(),
-      expiryDate: _expiryDate!,
-      quantity: int.tryParse(_quantityCtrl.text.trim()) ?? 1,
+      batches: [batch],
       category: _category,
       notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       createdAt: DateTime.now(),

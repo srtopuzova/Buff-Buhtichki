@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import 'package:medshelf/core/theme/app_colors.dart';
 import 'package:medshelf/core/utils/date_helpers.dart';
 import 'package:medshelf/features/med_shelf/models/medication_model.dart';
@@ -116,19 +118,19 @@ class MedicationDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  // Status card
+                  // Overall status (earliest expiry)
                   _StatusCard(
                     med: med,
                     statusColor: statusColor,
                     daysLeft: daysLeft,
                   ),
                   const SizedBox(height: 16),
-                  // Quantity card
-                  _QuantityCard(
-                    medication: med,
-                    onChanged: (q) => context
-                        .read<MedicationProvider>()
-                        .updateQuantity(med.id, q),
+                  // All boxes
+                  _BatchesCard(
+                    med: med,
+                    onAddBatch: () => _showAddBatchSheet(context, med),
+                    onRemoveBatch: (batchId) =>
+                        _confirmRemoveBatch(context, med, batchId),
                   ),
                   const SizedBox(height: 16),
                   // Details
@@ -167,7 +169,59 @@ class MedicationDetailScreen extends StatelessWidget {
       if (context.mounted) context.pop();
     }
   }
+
+  Future<void> _showAddBatchSheet(
+      BuildContext context, MedicationModel med) async {
+    final batch = await showModalBottomSheet<MedicationBatch>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _AddBatchSheet(),
+    );
+    if (batch == null || !context.mounted) return;
+
+    final success = await context.read<MedicationProvider>().addBatch(
+          medicationId: med.id,
+          batch: batch,
+          medicationName: med.name,
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(success ? 'Box added!' : 'Failed to add box'),
+      backgroundColor: success ? AppColors.success : AppColors.error,
+    ));
+  }
+
+  Future<void> _confirmRemoveBatch(
+      BuildContext context, MedicationModel med, String batchId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Box'),
+        content: const Text('Remove this box? Its notifications will be cancelled.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await context.read<MedicationProvider>().removeBatch(
+            medicationId: med.id,
+            batchId: batchId,
+            currentBatches: med.batches,
+          );
+    }
+  }
 }
+
+// ─── Status card ─────────────────────────────────────────────────────────────
 
 class _StatusCard extends StatelessWidget {
   final MedicationModel med;
@@ -220,7 +274,9 @@ class _StatusCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Expiry: ${DateHelpers.formatDisplay(med.expiryDate)}',
+                  med.batches.length == 1
+                      ? 'Expiry: ${DateHelpers.formatDisplay(med.expiryDate)}'
+                      : 'Earliest expiry: ${DateHelpers.formatDisplay(med.expiryDate)}',
                   style: TextStyle(
                     color: statusColor.withValues(alpha: 0.8),
                     fontSize: 13,
@@ -235,24 +291,18 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
-class _QuantityCard extends StatefulWidget {
-  final MedicationModel medication;
-  final ValueChanged<int> onChanged;
+// ─── Batches card ────────────────────────────────────────────────────────────
 
-  const _QuantityCard({required this.medication, required this.onChanged});
+class _BatchesCard extends StatelessWidget {
+  final MedicationModel med;
+  final VoidCallback onAddBatch;
+  final void Function(String batchId) onRemoveBatch;
 
-  @override
-  State<_QuantityCard> createState() => _QuantityCardState();
-}
-
-class _QuantityCardState extends State<_QuantityCard> {
-  late int _quantity;
-
-  @override
-  void initState() {
-    super.initState();
-    _quantity = widget.medication.quantity;
-  }
+  const _BatchesCard({
+    required this.med,
+    required this.onAddBatch,
+    required this.onRemoveBatch,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -263,43 +313,268 @@ class _QuantityCardState extends State<_QuantityCard> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.divider),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.inventory_2_rounded,
-              color: AppColors.medShelf, size: 22),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text('Quantity',
-                style: TextStyle(
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_rounded,
+                  color: AppColors.medShelf, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Boxes (${med.batches.length})  •  Total qty: ${med.quantity}',
+                style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,
-                    fontWeight: FontWeight.w600)),
+                    fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onAddBatch,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.medShelfLight,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_rounded,
+                          size: 14, color: AppColors.medShelf),
+                      SizedBox(width: 4),
+                      Text('Add box',
+                          style: TextStyle(
+                              color: AppColors.medShelf,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-          _CounterButton(
-            icon: Icons.remove_rounded,
-            onTap: _quantity > 0
-                ? () {
-                    setState(() => _quantity--);
-                    widget.onChanged(_quantity);
-                  }
-                : null,
+          const SizedBox(height: 12),
+          for (int i = 0; i < med.batches.length; i++) ...[
+            if (i > 0) const Divider(height: 16),
+            _BatchRow(
+              index: i,
+              batch: med.batches[i],
+              canRemove: med.batches.length > 1,
+              onRemove: () => onRemoveBatch(med.batches[i].id),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BatchRow extends StatelessWidget {
+  final int index;
+  final MedicationBatch batch;
+  final bool canRemove;
+  final VoidCallback onRemove;
+
+  const _BatchRow({
+    required this.index,
+    required this.batch,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  Color get _color {
+    final days = batch.daysUntilExpiry;
+    if (days < 0) return AppColors.error;
+    if (days <= 7) return AppColors.error;
+    if (days <= 30) return AppColors.warning;
+    return AppColors.success;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: _color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Box ${index + 1}',
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Exp: ${DateHelpers.formatDisplay(batch.expiryDate)}  •  Qty: ${batch.quantity}',
+                style: TextStyle(color: _color, fontSize: 12),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '$_quantity',
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700),
+        ),
+        if (canRemove)
+          GestureDetector(
+            onTap: onRemove,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Icon(Icons.close_rounded,
+                  size: 18, color: AppColors.textSecondary),
             ),
           ),
-          _CounterButton(
-            icon: Icons.add_rounded,
-            onTap: () {
-              setState(() => _quantity++);
-              widget.onChanged(_quantity);
-            },
+      ],
+    );
+  }
+}
+
+// ─── Add batch bottom sheet ───────────────────────────────────────────────────
+
+class _AddBatchSheet extends StatefulWidget {
+  const _AddBatchSheet();
+
+  @override
+  State<_AddBatchSheet> createState() => _AddBatchSheetState();
+}
+
+class _AddBatchSheetState extends State<_AddBatchSheet> {
+  DateTime? _expiry;
+  final _qtyCtrl = TextEditingController(text: '1');
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _expiry ?? DateTime(now.year + 1, now.month),
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 20),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: Theme.of(context)
+              .colorScheme
+              .copyWith(primary: AppColors.medShelf),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _expiry = picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Add Another Box',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Icon(Icons.close_rounded,
+                    color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Text('Expiry Date *',
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: _pickDate,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today_rounded,
+                      color: AppColors.medShelf, size: 18),
+                  const SizedBox(width: 10),
+                  Text(
+                    _expiry != null
+                        ? DateFormat('dd MMMM yyyy').format(_expiry!)
+                        : 'Select expiry date',
+                    style: TextStyle(
+                      color: _expiry != null
+                          ? AppColors.textPrimary
+                          : AppColors.textDisabled,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('Quantity',
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _qtyCtrl,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(hintText: 'e.g. 30'),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _expiry == null
+                  ? null
+                  : () {
+                      final batch = MedicationBatch(
+                        id: const Uuid().v4(),
+                        expiryDate: _expiry!,
+                        quantity: int.tryParse(_qtyCtrl.text.trim()) ?? 1,
+                      );
+                      Navigator.pop(context, batch);
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.medShelf,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Add Box',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
           ),
         ],
       ),
@@ -307,32 +582,7 @@ class _QuantityCardState extends State<_QuantityCard> {
   }
 }
 
-class _CounterButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  const _CounterButton({required this.icon, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: onTap != null ? AppColors.medShelfLight : AppColors.divider,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(
-          icon,
-          size: 18,
-          color: onTap != null ? AppColors.medShelf : AppColors.textDisabled,
-        ),
-      ),
-    );
-  }
-}
+// ─── Detail card ──────────────────────────────────────────────────────────────
 
 class _DetailCard extends StatelessWidget {
   final MedicationModel med;

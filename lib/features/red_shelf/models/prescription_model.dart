@@ -42,16 +42,44 @@ class DoseRecord {
       };
 }
 
-class PrescriptionModel {
-  final String id;
-  final String userId;
-  final String medicationName;
+class PrescribedItem {
+  final String name;
   final String? dosage;
   final String? frequency;
   final String? duration;
+  final String? instructions;
+
+  const PrescribedItem({
+    required this.name,
+    this.dosage,
+    this.frequency,
+    this.duration,
+    this.instructions,
+  });
+
+  factory PrescribedItem.fromMap(Map<String, dynamic> map) => PrescribedItem(
+        name: map['name'] as String? ?? '',
+        dosage: map['dosage'] as String?,
+        frequency: map['frequency'] as String?,
+        duration: map['duration'] as String?,
+        instructions: map['instructions'] as String?,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'dosage': dosage,
+        'frequency': frequency,
+        'duration': duration,
+        'instructions': instructions,
+      };
+}
+
+class PrescriptionModel {
+  final String id;
+  final String userId;
+  final List<PrescribedItem> items;
   final String? doctorName;
   final String? patientName;
-  final String? instructions;
   final String? imageUrl;
   final PrescriptionStatus status;
   final List<DoseRecord> doseRecords;
@@ -64,13 +92,9 @@ class PrescriptionModel {
   const PrescriptionModel({
     required this.id,
     required this.userId,
-    required this.medicationName,
-    this.dosage,
-    this.frequency,
-    this.duration,
+    required this.items,
     this.doctorName,
     this.patientName,
-    this.instructions,
     this.imageUrl,
     required this.status,
     required this.doseRecords,
@@ -80,6 +104,18 @@ class PrescriptionModel {
     required this.updatedAt,
     this.pickedUpAt,
   });
+
+  // Convenience getters — used by PrescriptionCard, DoseTracker, PrescriptionService
+  String get title => items.isEmpty
+      ? 'Prescription'
+      : items.length == 1
+          ? items[0].name
+          : '${items[0].name} (+${items.length - 1} more)';
+
+  String get medicationName => title;
+  String? get dosage => items.isEmpty ? null : items[0].dosage;
+  String? get frequency => items.isEmpty ? null : items[0].frequency;
+  String? get instructions => items.isEmpty ? null : items[0].instructions;
 
   bool get isPending => status == PrescriptionStatus.pending;
   bool get isActive => status == PrescriptionStatus.active;
@@ -98,16 +134,34 @@ class PrescriptionModel {
   factory PrescriptionModel.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
     final rawDoses = d['doseRecords'] as List<dynamic>? ?? [];
+
+    // Parse items (new format) or fall back to legacy single-medication fields
+    List<PrescribedItem> items;
+    if (d['items'] != null) {
+      items = (d['items'] as List<dynamic>)
+          .map((i) => PrescribedItem.fromMap(i as Map<String, dynamic>))
+          .toList();
+    } else {
+      final name = d['medicationName'] as String? ?? '';
+      items = name.isNotEmpty
+          ? [
+              PrescribedItem(
+                name: name,
+                dosage: d['dosage'] as String?,
+                frequency: d['frequency'] as String?,
+                duration: d['duration'] as String?,
+                instructions: d['instructions'] as String?,
+              )
+            ]
+          : [];
+    }
+
     return PrescriptionModel(
       id: doc.id,
       userId: d['userId'] as String? ?? '',
-      medicationName: d['medicationName'] as String? ?? '',
-      dosage: d['dosage'] as String?,
-      frequency: d['frequency'] as String?,
-      duration: d['duration'] as String?,
+      items: items,
       doctorName: d['doctorName'] as String?,
       patientName: d['patientName'] as String?,
-      instructions: d['instructions'] as String?,
       imageUrl: d['imageUrl'] as String?,
       status: PrescriptionStatusExt.fromString(
           d['status'] as String? ?? 'pending'),
@@ -126,13 +180,9 @@ class PrescriptionModel {
 
   Map<String, dynamic> toFirestore() => {
         'userId': userId,
-        'medicationName': medicationName,
-        'dosage': dosage,
-        'frequency': frequency,
-        'duration': duration,
+        'items': items.map((i) => i.toMap()).toList(),
         'doctorName': doctorName,
         'patientName': patientName,
-        'instructions': instructions,
         'imageUrl': imageUrl,
         'status': status.name,
         'doseRecords': doseRecords.map((d) => d.toMap()).toList(),
@@ -147,13 +197,9 @@ class PrescriptionModel {
   PrescriptionModel copyWith({
     String? id,
     String? userId,
-    String? medicationName,
-    String? dosage,
-    String? frequency,
-    String? duration,
+    List<PrescribedItem>? items,
     String? doctorName,
     String? patientName,
-    String? instructions,
     String? imageUrl,
     PrescriptionStatus? status,
     List<DoseRecord>? doseRecords,
@@ -166,13 +212,9 @@ class PrescriptionModel {
     return PrescriptionModel(
       id: id ?? this.id,
       userId: userId ?? this.userId,
-      medicationName: medicationName ?? this.medicationName,
-      dosage: dosage ?? this.dosage,
-      frequency: frequency ?? this.frequency,
-      duration: duration ?? this.duration,
+      items: items ?? this.items,
       doctorName: doctorName ?? this.doctorName,
       patientName: patientName ?? this.patientName,
-      instructions: instructions ?? this.instructions,
       imageUrl: imageUrl ?? this.imageUrl,
       status: status ?? this.status,
       doseRecords: doseRecords ?? this.doseRecords,

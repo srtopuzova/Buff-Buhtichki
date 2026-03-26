@@ -19,23 +19,31 @@ class OcrMedicationResult {
   });
 }
 
-class OcrPrescriptionResult {
-  final String? medicationName;
+class OcrPrescribedItem {
+  final String name;
   final String? dosage;
   final String? frequency;
   final String? duration;
-  final String? doctorName;
-  final String? patientName;
   final String? instructions;
 
-  const OcrPrescriptionResult({
-    this.medicationName,
+  const OcrPrescribedItem({
+    required this.name,
     this.dosage,
     this.frequency,
     this.duration,
+    this.instructions,
+  });
+}
+
+class OcrPrescriptionResult {
+  final List<OcrPrescribedItem> items;
+  final String? doctorName;
+  final String? patientName;
+
+  const OcrPrescriptionResult({
+    this.items = const [],
     this.doctorName,
     this.patientName,
-    this.instructions,
   });
 }
 
@@ -211,25 +219,24 @@ Respond ONLY with JSON:
       {
         'type': 'text',
         'text':
-            '''You are a medical assistant. Carefully read this prescription and extract:
-1. Medication name (exact as written)
-2. Dosage (e.g. "500mg", "1 tablet")
-3. Frequency (e.g. "twice daily", "every 8 hours", "3 times a day")
-4. Duration (e.g. "7 days", "2 weeks", "1 month")
-5. Doctor name
-6. Patient name
-7. Special instructions (e.g. "take with food", "avoid alcohol")
+            '''You are a medical assistant. Carefully read this prescription and extract ALL medications listed, along with doctor and patient info.
 
 Respond ONLY with a JSON object in this exact format (use null for missing fields):
 {
-  "medication_name": "...",
-  "dosage": "...",
-  "frequency": "...",
-  "duration": "...",
   "doctor_name": "...",
   "patient_name": "...",
-  "instructions": "..."
-}''',
+  "medications": [
+    {
+      "name": "exact medication name",
+      "dosage": "e.g. 500mg, 1 tablet",
+      "frequency": "e.g. twice daily, every 8 hours",
+      "duration": "e.g. 7 days, 2 weeks",
+      "instructions": "e.g. take with food, avoid alcohol"
+    }
+  ]
+}
+
+Include every medication listed on the prescription as a separate entry in the array.''',
       },
     ];
 
@@ -267,14 +274,22 @@ Respond ONLY with a JSON object in this exact format (use null for missing field
     try {
       final jsonStr = _extractJson(raw);
       final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final rawMeds = map['medications'] as List<dynamic>? ?? [];
+      final items = rawMeds.map((m) {
+        final med = m as Map<String, dynamic>;
+        return OcrPrescribedItem(
+          name: _nonEmpty(med['name']) ?? '',
+          dosage: _nonEmpty(med['dosage']),
+          frequency: _nonEmpty(med['frequency']),
+          duration: _nonEmpty(med['duration']),
+          instructions: _nonEmpty(med['instructions']),
+        );
+      }).where((i) => i.name.isNotEmpty).toList();
+
       return OcrPrescriptionResult(
-        medicationName: _nonEmpty(map['medication_name']),
-        dosage: _nonEmpty(map['dosage']),
-        frequency: _nonEmpty(map['frequency']),
-        duration: _nonEmpty(map['duration']),
+        items: items,
         doctorName: _nonEmpty(map['doctor_name']),
         patientName: _nonEmpty(map['patient_name']),
-        instructions: _nonEmpty(map['instructions']),
       );
     } catch (_) {
       return null;

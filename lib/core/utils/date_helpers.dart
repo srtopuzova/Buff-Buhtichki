@@ -43,30 +43,43 @@ class DateHelpers {
   }
 
   static DateTime? tryParseExpiry(String raw) {
-    // Try MM/YYYY
-    final mmYYYY = RegExp(r'^(\d{1,2})[/\-\.](\d{4})$');
-    final m1 = mmYYYY.firstMatch(raw.trim());
-    if (m1 != null) {
-      final month = int.tryParse(m1.group(1)!);
-      final year = int.tryParse(m1.group(2)!);
+    // Strip common prefixes: "EXP:", "EXP", "EXPIRES", "USE BY", "BB:", etc.
+    final cleaned = raw
+        .replaceAll(RegExp(r'(?i)(exp(iry)?|expires?|use\s*by|best\s*before|bb)\s*[:\-]?\s*'), '')
+        .trim();
+
+    // Try MM/YYYY or MM-YYYY or MM.YYYY
+    final mmYYYY = RegExp(r'^(\d{1,2})[/\-\.\s](\d{4})$');
+    var m = mmYYYY.firstMatch(cleaned);
+    if (m != null) {
+      final month = int.tryParse(m.group(1)!);
+      final year = int.tryParse(m.group(2)!);
       if (month != null && year != null && month >= 1 && month <= 12) {
-        // Last day of that month
-        final firstOfNext = DateTime(year, month + 1, 1);
-        return firstOfNext.subtract(const Duration(days: 1));
+        return DateTime(year, month + 1, 1).subtract(const Duration(days: 1));
+      }
+    }
+    // Try YYYY/MM or YYYY-MM
+    final yyyyMM = RegExp(r'^(\d{4})[/\-\.](\d{1,2})$');
+    m = yyyyMM.firstMatch(cleaned);
+    if (m != null) {
+      final year = int.tryParse(m.group(1)!);
+      final month = int.tryParse(m.group(2)!);
+      if (month != null && year != null && month >= 1 && month <= 12) {
+        return DateTime(year, month + 1, 1).subtract(const Duration(days: 1));
       }
     }
     // Try DD/MM/YYYY
     final ddMMYYYY = RegExp(r'^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$');
-    final m2 = ddMMYYYY.firstMatch(raw.trim());
-    if (m2 != null) {
-      final day = int.tryParse(m2.group(1)!);
-      final month = int.tryParse(m2.group(2)!);
-      final year = int.tryParse(m2.group(3)!);
+    m = ddMMYYYY.firstMatch(cleaned);
+    if (m != null) {
+      final day = int.tryParse(m.group(1)!);
+      final month = int.tryParse(m.group(2)!);
+      final year = int.tryParse(m.group(3)!);
       if (day != null && month != null && year != null) {
         return DateTime(year, month, day);
       }
     }
     // Try standard DateTime.parse
-    return DateTime.tryParse(raw.trim());
+    return DateTime.tryParse(cleaned);
   }
 }

@@ -14,10 +14,47 @@ class DoseTracker extends StatelessWidget {
     required this.onSkipped,
   });
 
+  bool get _hasRecordedToday {
+    final today = DateTime.now();
+    return prescription.doseRecords.any((d) =>
+        d.timestamp.year == today.year &&
+        d.timestamp.month == today.month &&
+        d.timestamp.day == today.day);
+  }
+
+  bool get _takenToday {
+    final today = DateTime.now();
+    return prescription.doseRecords.any((d) =>
+        d.taken &&
+        d.timestamp.year == today.year &&
+        d.timestamp.month == today.month &&
+        d.timestamp.day == today.day);
+  }
+
+  // One entry per day for the last 7 days (most recent record wins)
+  List<DoseRecord> _lastSevenDays() {
+    final now = DateTime.now();
+    final result = <DoseRecord>[];
+    for (int i = 6; i >= 0; i--) {
+      final day = DateTime(now.year, now.month, now.day - i);
+      final dayRecords = prescription.doseRecords.where((d) =>
+          d.timestamp.year == day.year &&
+          d.timestamp.month == day.month &&
+          d.timestamp.day == day.day);
+      if (dayRecords.isNotEmpty) {
+        // Last record of the day wins
+        result.add(dayRecords.reduce(
+            (a, b) => a.timestamp.isAfter(b.timestamp) ? a : b));
+      }
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final todayDoses = prescription.dosesToday;
-    final recentDoses = _recentDoses(7);
+    final recorded = _hasRecordedToday;
+    final taken = _takenToday;
+    final weekDots = _lastSevenDays();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -42,40 +79,53 @@ class DoseTracker extends StatelessWidget {
                     fontWeight: FontWeight.w700),
               ),
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.redShelfLight,
-                  borderRadius: BorderRadius.circular(20),
+              if (recorded)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: taken
+                        ? AppColors.success.withValues(alpha: 0.1)
+                        : AppColors.errorLight,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        taken ? Icons.check_rounded : Icons.close_rounded,
+                        size: 12,
+                        color: taken ? AppColors.success : AppColors.error,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        taken ? 'Taken today' : 'Skipped today',
+                        style: TextStyle(
+                            color:
+                                taken ? AppColors.success : AppColors.error,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Text(
-                  '$todayDoses dose${todayDoses == 1 ? '' : 's'} today',
-                  style: const TextStyle(
-                      color: AppColors.redShelf,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600),
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: 14),
-          // Weekly history
-          if (recentDoses.isNotEmpty) ...[
+          // Weekly history dots
+          if (weekDots.isNotEmpty) ...[
+            const SizedBox(height: 14),
             const Text('Last 7 days',
                 style: TextStyle(
                     color: AppColors.textSecondary, fontSize: 12)),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: recentDoses
-                  .map((d) => _DayDot(record: d))
-                  .toList(),
+              children: weekDots.map((d) => _DayDot(record: d)).toList(),
             ),
-            const SizedBox(height: 14),
           ],
-          // Action buttons
-          if (prescription.isActive) ...[
+          // Action buttons — only if not yet recorded today
+          if (prescription.isActive && !recorded) ...[
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
@@ -114,15 +164,6 @@ class DoseTracker extends StatelessWidget {
       ),
     );
   }
-
-  List<DoseRecord> _recentDoses(int days) {
-    final cutoff =
-        DateTime.now().subtract(Duration(days: days));
-    return prescription.doseRecords
-        .where((d) => d.timestamp.isAfter(cutoff))
-        .toList()
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-  }
 }
 
 class _DayDot extends StatelessWidget {
@@ -132,16 +173,13 @@ class _DayDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dayLabel = _dayLabel(record.timestamp);
     return Column(
       children: [
         Container(
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: record.taken
-                ? AppColors.success
-                : AppColors.errorLight,
+            color: record.taken ? AppColors.success : AppColors.errorLight,
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -151,9 +189,11 @@ class _DayDot extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(dayLabel,
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 10)),
+        Text(
+          _dayLabel(record.timestamp),
+          style: const TextStyle(
+              color: AppColors.textSecondary, fontSize: 10),
+        ),
       ],
     );
   }

@@ -57,15 +57,17 @@ class PrescriptionDetailScreen extends StatelessWidget {
                         _StatusPill(status: rx.status),
                         const SizedBox(height: 8),
                         Text(
-                          rx.medicationName,
+                          rx.items.length == 1
+                              ? rx.items[0].name
+                              : '${rx.items.length} medications',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 24,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        if (rx.dosage != null)
-                          Text(rx.dosage!,
+                        if (rx.doctorName != null)
+                          Text('Dr. ${rx.doctorName}',
                               style: const TextStyle(
                                   color: Colors.white70, fontSize: 14)),
                       ],
@@ -84,15 +86,19 @@ class PrescriptionDetailScreen extends StatelessWidget {
                   if (rx.isPending) ...[
                     _PendingBanner(
                       onPickedUp: () async {
-                        await provider.markPickedUp(rx.id);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Marked as picked up!'),
-                              backgroundColor: AppColors.success,
-                            ),
-                          );
-                        }
+                        final success = await provider.markPickedUp(rx.id);
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success
+                                ? 'Marked as picked up!'
+                                : provider.errorMessage ?? 'Failed to update'),
+                            backgroundColor: success
+                                ? AppColors.success
+                                : AppColors.error,
+                          ),
+                        );
+                        if (success) provider.clearError();
                       },
                     ),
                     const SizedBox(height: 16),
@@ -106,8 +112,11 @@ class PrescriptionDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  // Details card
-                  _DetailsCard(rx: rx),
+                  // All medications list
+                  _MedicationsList(items: rx.items),
+                  const SizedBox(height: 16),
+                  // Prescription info card
+                  _InfoCard(rx: rx),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -125,7 +134,7 @@ class PrescriptionDetailScreen extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Prescription'),
         content: Text(
-            'Remove "${rx.medicationName}" prescription? This cannot be undone.'),
+            'Remove "${rx.title}" prescription? This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -203,8 +212,7 @@ class _PendingBanner extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onPickedUp,
-              icon: const Icon(Icons.check_circle_outline_rounded,
-                  size: 16),
+              icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
               label: const Text('Confirm Pickup'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success,
@@ -220,9 +228,9 @@ class _PendingBanner extends StatelessWidget {
   }
 }
 
-class _DetailsCard extends StatelessWidget {
-  final PrescriptionModel rx;
-  const _DetailsCard({required this.rx});
+class _MedicationsList extends StatelessWidget {
+  final List<PrescribedItem> items;
+  const _MedicationsList({required this.items});
 
   @override
   Widget build(BuildContext context) {
@@ -236,16 +244,160 @@ class _DetailsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Prescription Details',
+          Row(
+            children: [
+              const Icon(Icons.medication_rounded,
+                  color: AppColors.redShelf, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Medications (${items.length})',
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (int i = 0; i < items.length; i++) ...[
+            if (i > 0)
+              const Divider(height: 20),
+            _MedItemRow(index: i, item: items[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MedItemRow extends StatelessWidget {
+  final int index;
+  final PrescribedItem item;
+  const _MedItemRow({required this.index, required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: AppColors.redShelfLight,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                      color: AppColors.redShelf,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                item.name,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        if (item.dosage != null || item.frequency != null) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 30),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (item.dosage != null)
+                  _Chip(Icons.scale_rounded, item.dosage!),
+                if (item.frequency != null)
+                  _Chip(Icons.access_time_rounded, item.frequency!),
+                if (item.duration != null)
+                  _Chip(Icons.calendar_today_rounded, item.duration!),
+              ],
+            ),
+          ),
+        ],
+        if (item.instructions != null) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 30),
+            child: Text(
+              item.instructions!,
+              style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _Chip(this.icon, this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.redShelfLight,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppColors.redShelf),
+          const SizedBox(width: 4),
+          Text(label,
+              style: const TextStyle(
+                  color: AppColors.redShelf,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  final PrescriptionModel rx;
+  const _InfoCard({required this.rx});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Prescription Info',
               style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
-          if (rx.frequency != null)
-            _Row('Frequency', rx.frequency!),
-          if (rx.duration != null)
-            _Row('Duration', rx.duration!),
           if (rx.doctorName != null)
             _Row('Doctor', 'Dr. ${rx.doctorName}'),
           if (rx.patientName != null)
@@ -255,20 +407,7 @@ class _DetailsCard extends StatelessWidget {
                 '${rx.reminderHour!.toString().padLeft(2, '0')}:${rx.reminderMinute!.toString().padLeft(2, '0')}'),
           _Row('Added', DateHelpers.formatDisplay(rx.createdAt)),
           if (rx.pickedUpAt != null)
-            _Row('Picked Up',
-                DateHelpers.formatDisplay(rx.pickedUpAt!)),
-          if (rx.instructions != null) ...[
-            const Divider(height: 20),
-            const Text('Instructions',
-                style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(rx.instructions!,
-                style: const TextStyle(
-                    color: AppColors.textPrimary, fontSize: 14)),
-          ],
+            _Row('Picked Up', DateHelpers.formatDisplay(rx.pickedUpAt!)),
         ],
       ),
     );

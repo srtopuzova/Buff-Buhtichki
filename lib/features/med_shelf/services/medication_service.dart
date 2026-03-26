@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
@@ -20,18 +21,23 @@ class MedicationService {
       _firestore.collection(AppConstants.medicationsCollection);
 
   Query<Map<String, dynamic>> _userQuery(String userId) =>
-      _col(userId).where('userId', isEqualTo: userId).orderBy('name');
+      _col(userId).where('userId', isEqualTo: userId);
 
   Stream<List<MedicationModel>> watchMedications(String userId) {
-    return _userQuery(userId).snapshots().map(
-          (snap) =>
-              snap.docs.map((d) => MedicationModel.fromFirestore(d)).toList(),
-        );
+    return _userQuery(userId).snapshots().map((snap) {
+      final list =
+          snap.docs.map((d) => MedicationModel.fromFirestore(d)).toList();
+      list.sort((a, b) => a.name.compareTo(b.name));
+      return list;
+    });
   }
 
   Future<List<MedicationModel>> getMedications(String userId) async {
     final snap = await _userQuery(userId).get();
-    return snap.docs.map((d) => MedicationModel.fromFirestore(d)).toList();
+    final list =
+        snap.docs.map((d) => MedicationModel.fromFirestore(d)).toList();
+    list.sort((a, b) => a.name.compareTo(b.name));
+    return list;
   }
 
   Future<MedicationModel> addMedication({
@@ -43,7 +49,11 @@ class MedicationService {
     String? imageUrl;
 
     if (imageFile != null) {
-      imageUrl = await _uploadImage(imageFile, id);
+      try {
+        imageUrl = await _uploadImage(imageFile, id);
+      } catch (e) {
+        debugPrint('Image upload skipped: $e');
+      }
     }
 
     final now = DateTime.now();

@@ -45,9 +45,11 @@ class AppTheme {
             borderRadius: BorderRadius.circular(12),
           ),
           textStyle: const TextStyle(
+            inherit: false,
             fontSize: 16,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.2,
+            color: Colors.white,
           ),
         ),
       ),
@@ -60,8 +62,10 @@ class AppTheme {
             borderRadius: BorderRadius.circular(12),
           ),
           textStyle: const TextStyle(
+            inherit: false,
             fontSize: 16,
             fontWeight: FontWeight.w600,
+            color: AppColors.medShelf,
           ),
         ),
       ),
@@ -69,8 +73,10 @@ class AppTheme {
         style: TextButton.styleFrom(
           foregroundColor: AppColors.medShelf,
           textStyle: const TextStyle(
+            inherit: false,
             fontSize: 14,
             fontWeight: FontWeight.w600,
+            color: AppColors.medShelf,
           ),
         ),
       ),

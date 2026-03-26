@@ -10,6 +10,22 @@ import 'package:medshelf/features/red_shelf/providers/prescription_provider.dart
 import 'package:medshelf/shared/services/ocr_service.dart';
 import 'package:medshelf/shared/widgets/loading_overlay.dart';
 
+class _ItemCtrl {
+  final TextEditingController name = TextEditingController();
+  final TextEditingController dosage = TextEditingController();
+  final TextEditingController frequency = TextEditingController();
+  final TextEditingController duration = TextEditingController();
+  final TextEditingController instructions = TextEditingController();
+
+  void dispose() {
+    name.dispose();
+    dosage.dispose();
+    frequency.dispose();
+    duration.dispose();
+    instructions.dispose();
+  }
+}
+
 class AddPrescriptionScreen extends StatefulWidget {
   const AddPrescriptionScreen({super.key});
 
@@ -20,13 +36,9 @@ class AddPrescriptionScreen extends StatefulWidget {
 
 class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _dosageCtrl = TextEditingController();
-  final _frequencyCtrl = TextEditingController();
-  final _durationCtrl = TextEditingController();
   final _doctorCtrl = TextEditingController();
   final _patientCtrl = TextEditingController();
-  final _instructionsCtrl = TextEditingController();
+  final List<_ItemCtrl> _items = [_ItemCtrl()];
 
   File? _imageFile;
   bool _isScanning = false;
@@ -39,13 +51,11 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _dosageCtrl.dispose();
-    _frequencyCtrl.dispose();
-    _durationCtrl.dispose();
     _doctorCtrl.dispose();
     _patientCtrl.dispose();
-    _instructionsCtrl.dispose();
+    for (final c in _items) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -61,31 +71,34 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
     });
 
     try {
-      final result =
-          await _ocrService.extractPrescriptionInfo(_imageFile!);
+      final result = await _ocrService.extractPrescriptionInfo(_imageFile!);
       if (!mounted) return;
       setState(() {
-        if (result.medicationName != null && _nameCtrl.text.isEmpty) {
-          _nameCtrl.text = result.medicationName!;
-        }
-        if (result.dosage != null && _dosageCtrl.text.isEmpty) {
-          _dosageCtrl.text = result.dosage!;
-        }
-        if (result.frequency != null && _frequencyCtrl.text.isEmpty) {
-          _frequencyCtrl.text = result.frequency!;
-        }
-        if (result.duration != null && _durationCtrl.text.isEmpty) {
-          _durationCtrl.text = result.duration!;
-        }
         if (result.doctorName != null && _doctorCtrl.text.isEmpty) {
           _doctorCtrl.text = result.doctorName!;
         }
         if (result.patientName != null && _patientCtrl.text.isEmpty) {
           _patientCtrl.text = result.patientName!;
         }
-        if (result.instructions != null &&
-            _instructionsCtrl.text.isEmpty) {
-          _instructionsCtrl.text = result.instructions!;
+        if (result.items.isNotEmpty) {
+          for (final c in _items) {
+            c.dispose();
+          }
+          _items.clear();
+          for (final item in result.items) {
+            final ctrl = _ItemCtrl();
+            ctrl.name.text = item.name;
+            if (item.dosage != null) ctrl.dosage.text = item.dosage!;
+            if (item.frequency != null) ctrl.frequency.text = item.frequency!;
+            if (item.duration != null) ctrl.duration.text = item.duration!;
+            if (item.instructions != null) {
+              ctrl.instructions.text = item.instructions!;
+            }
+            _items.add(ctrl);
+          }
+        } else {
+          _scanError =
+              'No medications found. Please fill in manually.';
         }
         _isScanning = false;
       });
@@ -96,6 +109,17 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
         _scanError = 'Scan failed: ${e.toString()}';
       });
     }
+  }
+
+  void _addItem() {
+    setState(() => _items.add(_ItemCtrl()));
+  }
+
+  void _removeItem(int index) {
+    setState(() {
+      _items[index].dispose();
+      _items.removeAt(index);
+    });
   }
 
   Future<void> _pickReminderTime() async {
@@ -116,30 +140,49 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final validItems =
+        _items.where((c) => c.name.text.trim().isNotEmpty).toList();
+    if (validItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add at least one medication'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
+
+    final rxItems = validItems
+        .map((c) => PrescribedItem(
+              name: c.name.text.trim(),
+              dosage: c.dosage.text.trim().isEmpty
+                  ? null
+                  : c.dosage.text.trim(),
+              frequency: c.frequency.text.trim().isEmpty
+                  ? null
+                  : c.frequency.text.trim(),
+              duration: c.duration.text.trim().isEmpty
+                  ? null
+                  : c.duration.text.trim(),
+              instructions: c.instructions.text.trim().isEmpty
+                  ? null
+                  : c.instructions.text.trim(),
+            ))
+        .toList();
 
     final prescription = PrescriptionModel(
       id: '',
       userId: '',
-      medicationName: _nameCtrl.text.trim(),
-      dosage: _dosageCtrl.text.trim().isEmpty
-          ? null
-          : _dosageCtrl.text.trim(),
-      frequency: _frequencyCtrl.text.trim().isEmpty
-          ? null
-          : _frequencyCtrl.text.trim(),
-      duration: _durationCtrl.text.trim().isEmpty
-          ? null
-          : _durationCtrl.text.trim(),
+      items: rxItems,
       doctorName: _doctorCtrl.text.trim().isEmpty
           ? null
           : _doctorCtrl.text.trim(),
       patientName: _patientCtrl.text.trim().isEmpty
           ? null
           : _patientCtrl.text.trim(),
-      instructions: _instructionsCtrl.text.trim().isEmpty
-          ? null
-          : _instructionsCtrl.text.trim(),
       status: PrescriptionStatus.pending,
       doseRecords: const [],
       reminderHour: _reminderTime?.hour,
@@ -219,31 +262,50 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
                   onGallery: () => _pickAndScan(ImageSource.gallery),
                 ),
                 const SizedBox(height: 20),
-                _field(_nameCtrl, 'Medication Name *',
-                    validator: (v) =>
-                        Validators.required(v, fieldName: 'Medication name')),
+                // Doctor / Patient
+                _label('Doctor Name'),
+                const SizedBox(height: 6),
+                _textField(_doctorCtrl, hint: 'e.g. Dr. Ivanov'),
                 const SizedBox(height: 12),
+                _label('Patient Name'),
+                const SizedBox(height: 6),
+                _textField(_patientCtrl, hint: 'e.g. Ivan Petrov'),
+                const SizedBox(height: 20),
+                // Medications section
                 Row(
                   children: [
-                    Expanded(
-                        child: _field(_dosageCtrl, 'Dosage',
-                            hint: 'e.g. 500mg')),
-                    const SizedBox(width: 12),
-                    Expanded(
-                        child: _field(_frequencyCtrl, 'Frequency',
-                            hint: 'e.g. twice daily')),
+                    const Text(
+                      'Medications',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: _addItem,
+                      icon: const Icon(Icons.add_rounded,
+                          size: 16, color: AppColors.redShelf),
+                      label: const Text('Add',
+                          style: TextStyle(
+                              color: AppColors.redShelf, fontSize: 13)),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                _field(_durationCtrl, 'Duration', hint: 'e.g. 7 days'),
-                const SizedBox(height: 12),
-                _field(_doctorCtrl, 'Doctor Name'),
-                const SizedBox(height: 12),
-                _field(_patientCtrl, 'Patient Name'),
-                const SizedBox(height: 12),
-                _field(_instructionsCtrl, 'Instructions',
-                    maxLines: 3,
-                    hint: 'e.g. take with food, avoid alcohol'),
+                const SizedBox(height: 10),
+                // Item cards
+                for (int i = 0; i < _items.length; i++)
+                  _MedItemCard(
+                    index: i,
+                    ctrl: _items[i],
+                    canRemove: _items.length > 1,
+                    onRemove: () => _removeItem(i),
+                  ),
                 const SizedBox(height: 16),
                 // Reminder time
                 _label('Daily Reminder (Optional)'),
@@ -315,29 +377,158 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
             fontWeight: FontWeight.w600),
       );
 
-  Widget _field(
-    TextEditingController ctrl,
-    String label, {
-    String? hint,
-    String? Function(String?)? validator,
-    int maxLines = 1,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label(label),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: ctrl,
-          validator: validator,
-          maxLines: maxLines,
-          style:
-              const TextStyle(color: AppColors.textPrimary, fontSize: 15),
-          decoration: InputDecoration(hintText: hint),
-        ),
-      ],
+  Widget _textField(TextEditingController ctrl,
+      {String? hint, String? Function(String?)? validator, int maxLines = 1}) {
+    return TextFormField(
+      controller: ctrl,
+      validator: validator,
+      maxLines: maxLines,
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+      decoration: InputDecoration(hintText: hint),
     );
   }
+}
+
+class _MedItemCard extends StatelessWidget {
+  final int index;
+  final _ItemCtrl ctrl;
+  final bool canRemove;
+  final VoidCallback onRemove;
+
+  const _MedItemCard({
+    required this.index,
+    required this.ctrl,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: AppColors.redShelfLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                        color: AppColors.redShelf,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Medication',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+              const Spacer(),
+              if (canRemove)
+                GestureDetector(
+                  onTap: onRemove,
+                  child: const Icon(Icons.close_rounded,
+                      size: 18, color: AppColors.error),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _fieldLabel('Name *'),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: ctrl.name,
+            validator: (v) => Validators.required(v, fieldName: 'Name'),
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            decoration:
+                const InputDecoration(hintText: 'e.g. Amoxicillin'),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _fieldLabel('Dosage'),
+                    const SizedBox(height: 4),
+                    TextFormField(
+                      controller: ctrl.dosage,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary, fontSize: 14),
+                      decoration:
+                          const InputDecoration(hintText: 'e.g. 500mg'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _fieldLabel('Frequency'),
+                    const SizedBox(height: 4),
+                    TextFormField(
+                      controller: ctrl.frequency,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary, fontSize: 14),
+                      decoration: const InputDecoration(
+                          hintText: 'e.g. twice daily'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _fieldLabel('Duration'),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: ctrl.duration,
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            decoration:
+                const InputDecoration(hintText: 'e.g. 7 days'),
+          ),
+          const SizedBox(height: 10),
+          _fieldLabel('Instructions'),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: ctrl.instructions,
+            maxLines: 2,
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            decoration: const InputDecoration(
+                hintText: 'e.g. take with food, avoid alcohol'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fieldLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+            color: AppColors.textSecondary, fontSize: 12),
+      );
 }
 
 class _RxScanSection extends StatelessWidget {
@@ -379,7 +570,8 @@ class _RxScanSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          const Text('Auto-fill details from the prescription image',
+          const Text(
+              'Auto-fill all medications from the prescription image',
               style: TextStyle(color: Colors.white70, fontSize: 12)),
           if (imageFile != null) ...[
             const SizedBox(height: 12),

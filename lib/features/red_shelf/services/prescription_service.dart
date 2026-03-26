@@ -21,11 +21,14 @@ class PrescriptionService {
     return _firestore
         .collection(AppConstants.prescriptionsCollection)
         .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => PrescriptionModel.fromFirestore(d))
-            .toList());
+        .map((snap) {
+      final list = snap.docs
+          .map((d) => PrescriptionModel.fromFirestore(d))
+          .toList();
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
+    });
   }
 
   Future<PrescriptionModel> addPrescription({
@@ -37,7 +40,11 @@ class PrescriptionService {
     String? imageUrl;
 
     if (imageFile != null) {
-      imageUrl = await _uploadImage(imageFile, id);
+      try {
+        imageUrl = await _uploadImage(imageFile, id);
+      } catch (e) {
+        // Storage not configured — save without image
+      }
     }
 
     final now = DateTime.now();

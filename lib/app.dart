@@ -10,7 +10,6 @@ import 'package:medshelf/features/med_shelf/screens/add_medication_screen.dart';
 import 'package:medshelf/features/med_shelf/screens/medication_detail_screen.dart';
 import 'package:medshelf/features/red_shelf/screens/add_prescription_screen.dart';
 import 'package:medshelf/features/red_shelf/screens/prescription_detail_screen.dart';
-import 'package:medshelf/shared/widgets/loading_overlay.dart';
 
 class MedShelfApp extends StatefulWidget {
   const MedShelfApp({super.key});
@@ -95,18 +94,26 @@ class _MedShelfAppState extends State<MedShelfApp> {
   }
 }
 
-// Simpler version that avoids the navigatorKey/context issue at init time
-class MedShelfAppRouter extends StatelessWidget {
+// Stable router — GoRouter created once in initState to avoid rebuild crashes
+class MedShelfAppRouter extends StatefulWidget {
   const MedShelfAppRouter({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
+  State<MedShelfAppRouter> createState() => _MedShelfAppRouterState();
+}
 
-    final router = GoRouter(
+class _MedShelfAppRouterState extends State<MedShelfAppRouter> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    _router = GoRouter(
       initialLocation: '/login',
-      refreshListenable: authProvider,
+      refreshListenable: auth,
       redirect: (context, state) {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final isAuth = authProvider.status == AuthStatus.authenticated;
         final isUnknown = authProvider.status == AuthStatus.unknown;
         final isOnAuthPage = state.matchedLocation == '/login' ||
@@ -154,18 +161,20 @@ class MedShelfAppRouter extends StatelessWidget {
         ),
       ],
     );
+  }
 
-    if (authProvider.status == AuthStatus.unknown) {
-      return const MaterialApp(
-        home: FullScreenLoader(message: 'Loading...'),
-        debugShowCheckedModeBanner: false,
-      );
-    }
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'MedShelf',
       theme: AppTheme.lightTheme,
-      routerConfig: router,
+      routerConfig: _router,
       debugShowCheckedModeBanner: false,
     );
   }

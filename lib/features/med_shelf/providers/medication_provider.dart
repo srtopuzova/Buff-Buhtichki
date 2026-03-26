@@ -1,0 +1,113 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:medshelf/features/med_shelf/models/medication_model.dart';
+import 'package:medshelf/features/med_shelf/services/medication_service.dart';
+
+class MedicationProvider extends ChangeNotifier {
+  final MedicationService _service = MedicationService();
+
+  List<MedicationModel> _medications = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+  String? _currentUserId;
+
+  List<MedicationModel> get medications => List.unmodifiable(_medications);
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+
+  List<MedicationModel> get expired =>
+      _medications.where((m) => m.isExpired).toList();
+
+  List<MedicationModel> get expiringSoon =>
+      _medications.where((m) => !m.isExpired && m.isExpiringSoon).toList();
+
+  List<MedicationModel> get active =>
+      _medications.where((m) => !m.isExpired).toList();
+
+  void initialize(String userId) {
+    if (_currentUserId == userId) return;
+    _currentUserId = userId;
+    _service.watchMedications(userId).listen(
+      (list) {
+        _medications = list;
+        notifyListeners();
+      },
+      onError: (e) {
+        _errorMessage = e.toString();
+        notifyListeners();
+      },
+    );
+  }
+
+  Future<bool> addMedication({
+    required MedicationModel medication,
+    File? imageFile,
+  }) async {
+    if (_currentUserId == null) return false;
+    _setLoading(true);
+    try {
+      await _service.addMedication(
+        userId: _currentUserId!,
+        medication: medication,
+        imageFile: imageFile,
+      );
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> updateMedication(MedicationModel medication,
+      {File? imageFile}) async {
+    _setLoading(true);
+    try {
+      await _service.updateMedication(medication, imageFile: imageFile);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> updateQuantity(String medicationId, int newQuantity) async {
+    try {
+      await _service.updateQuantity(medicationId, newQuantity);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> deleteMedication(String medicationId) async {
+    _setLoading(true);
+    try {
+      await _service.deleteMedication(medicationId);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  void _setLoading(bool v) {
+    _isLoading = v;
+    notifyListeners();
+  }
+}

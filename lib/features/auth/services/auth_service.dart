@@ -66,10 +66,38 @@ class AuthService {
         .collection(AppConstants.usersCollection)
         .doc(uid)
         .get();
-    if (!doc.exists) {
-      throw Exception('User profile not found');
+
+    final authUser = _auth.currentUser;
+    final fallbackUsername = authUser?.displayName?.trim().isNotEmpty == true
+        ? authUser!.displayName!.trim()
+        : authUser?.email?.split('@').first ?? 'User';
+
+    if (doc.exists) {
+      final model = UserModel.fromFirestore(doc);
+      // Fix empty username if it wasn't saved during signup
+      if (model.username.trim().isEmpty) {
+        final fixed = model.copyWith(username: fallbackUsername);
+        await _firestore
+            .collection(AppConstants.usersCollection)
+            .doc(uid)
+            .update({'username': fallbackUsername});
+        return fixed;
+      }
+      return model;
     }
-    return UserModel.fromFirestore(doc);
+
+    // Document missing — create it from Firebase Auth data
+    final userModel = UserModel(
+      uid: uid,
+      email: authUser?.email ?? '',
+      username: fallbackUsername,
+      createdAt: authUser?.metadata.creationTime ?? DateTime.now(),
+    );
+    await _firestore
+        .collection(AppConstants.usersCollection)
+        .doc(uid)
+        .set(userModel.toFirestore());
+    return userModel;
   }
 
   Future<void> sendPasswordResetEmail(String email) =>

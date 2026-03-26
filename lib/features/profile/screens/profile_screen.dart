@@ -149,7 +149,7 @@ class ProfileScreen extends StatelessWidget {
                       _TileRow(
                         icon: Icons.notifications_outlined,
                         label: 'Notifications',
-                        onTap: () {},
+                        onTap: () => _showNotificationsDialog(context),
                       ),
                       const Divider(height: 1),
                       _TileRow(
@@ -217,6 +217,62 @@ class ProfileScreen extends StatelessWidget {
       await context.read<AuthProvider>().signOut();
       if (context.mounted) context.go('/login');
     }
+  }
+
+  Widget _notifItem(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.medShelf),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: const TextStyle(
+                    color: AppColors.textPrimary, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNotificationsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.notifications_rounded, color: AppColors.medShelf, size: 22),
+            SizedBox(width: 8),
+            Text('Notifications'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('MedShelf sends you:',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
+            _notifItem(Icons.warning_amber_rounded, 'Expiry alerts — 30 days before'),
+            _notifItem(Icons.warning_rounded, 'Expiry alerts — 7 days before'),
+            _notifItem(Icons.error_rounded, 'Expiry alerts — 1 day before'),
+            _notifItem(Icons.alarm_rounded, 'Daily dose reminders'),
+            const SizedBox(height: 10),
+            const Text(
+              'To enable or disable notifications go to your phone\'s Settings → Apps → MedShelf → Notifications.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAbout(BuildContext context) {

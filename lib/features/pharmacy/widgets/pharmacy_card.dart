@@ -16,15 +16,17 @@ class PharmacyCard extends StatelessWidget {
 
   Future<void> _call() async {
     final uri = Uri(scheme: 'tel', path: pharmacy.phone);
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
+    try {
+      await launchUrl(uri);
+    } catch (_) {}
   }
 
   Future<void> _openMaps() async {
     final uri = Uri.parse(
         'https://www.google.com/maps/search/?api=1&query=${pharmacy.latitude},${pharmacy.longitude}');
-    if (await canLaunchUrl(uri)) {
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    } catch (_) {}
   }
 
   @override
@@ -135,21 +137,25 @@ class PharmacyCard extends StatelessWidget {
                     const Icon(Icons.access_time_rounded,
                         size: 14, color: AppColors.textSecondary),
                     const SizedBox(width: 4),
-                    Text(
-                      pharmacy.isOpen24h
-                          ? 'Open 24 hours'
-                          : pharmacy.openHours ?? 'Hours not available',
-                      style: TextStyle(
-                        color: pharmacy.isOpen24h
-                            ? AppColors.success
-                            : AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: pharmacy.isOpen24h
-                            ? FontWeight.w600
-                            : FontWeight.w400,
+                    Flexible(
+                      child: Text(
+                        pharmacy.isOpen24h
+                            ? 'Open 24 hours'
+                            : pharmacy.openHours ?? 'Hours not available',
+                        style: TextStyle(
+                          color: pharmacy.isOpen24h
+                              ? AppColors.success
+                              : AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: pharmacy.isOpen24h
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     // Call button
                     _ActionButton(
                       icon: Icons.phone_rounded,

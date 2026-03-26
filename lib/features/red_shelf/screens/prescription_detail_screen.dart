@@ -354,23 +354,32 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.redShelfLight,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: AppColors.redShelf),
-          const SizedBox(width: 4),
-          Text(label,
-              style: const TextStyle(
-                  color: AppColors.redShelf,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500)),
-        ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 180),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.redShelfLight,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 11, color: AppColors.redShelf),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(
+                    color: AppColors.redShelf,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

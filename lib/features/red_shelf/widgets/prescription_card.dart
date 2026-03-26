@@ -90,7 +90,9 @@ class PrescriptionCard extends StatelessWidget {
                               Text(prescription.dosage!,
                                   style: const TextStyle(
                                       color: AppColors.textSecondary,
-                                      fontSize: 12)),
+                                      fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
                             ],
                           ],
                         ),
@@ -111,10 +113,16 @@ class PrescriptionCard extends StatelessWidget {
                           const Icon(Icons.access_time_rounded,
                               size: 13, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
-                          Text(prescription.frequency!,
+                          Flexible(
+                            child: Text(
+                              prescription.frequency!,
                               style: const TextStyle(
                                   color: AppColors.textSecondary,
-                                  fontSize: 12)),
+                                  fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           const SizedBox(width: 12),
                         ],
                         if (prescription.doctorName != null) ...[

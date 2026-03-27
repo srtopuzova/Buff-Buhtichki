@@ -43,9 +43,15 @@ class DateHelpers {
   }
 
   static DateTime? tryParseExpiry(String raw) {
-    // Strip common prefixes: "EXP:", "EXP", "EXPIRES", "USE BY", "BB:", etc.
+    // Strip common prefixes in English and Bulgarian.
     final cleaned = raw
-        .replaceAll(RegExp(r'(?i)(exp(iry)?|expires?|use\s*by|best\s*before|bb)\s*[:\-]?\s*'), '')
+        .replaceAll(
+          RegExp(
+            r'(годен\s*до|валиден\s*до|exp(iry)?|expires?|use\s*by|best\s*before|bb)\s*[:\-]?\s*',
+            caseSensitive: false,
+          ),
+          '',
+        )
         .trim();
 
     // Try MM/YYYY or MM-YYYY or MM.YYYY

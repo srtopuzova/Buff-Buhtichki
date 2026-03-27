@@ -46,6 +46,8 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
   String? _scanError;
   TimeOfDay? _reminderTime;
 
+  void _removeImage() => setState(() => _imageFile = null);
+
   final _picker = ImagePicker();
   final _ocrService = OcrService();
 
@@ -260,6 +262,7 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
                   scanError: _scanError,
                   onCamera: () => _pickAndScan(ImageSource.camera),
                   onGallery: () => _pickAndScan(ImageSource.gallery),
+                  onRemoveImage: _removeImage,
                 ),
                 const SizedBox(height: 20),
                 // Doctor / Patient
@@ -537,6 +540,7 @@ class _RxScanSection extends StatelessWidget {
   final String? scanError;
   final VoidCallback onCamera;
   final VoidCallback onGallery;
+  final VoidCallback onRemoveImage;
 
   const _RxScanSection({
     required this.imageFile,
@@ -544,6 +548,7 @@ class _RxScanSection extends StatelessWidget {
     required this.scanError,
     required this.onCamera,
     required this.onGallery,
+    required this.onRemoveImage,
   });
 
   @override
@@ -575,10 +580,31 @@ class _RxScanSection extends StatelessWidget {
               style: TextStyle(color: Colors.white70, fontSize: 12)),
           if (imageFile != null) ...[
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(imageFile!,
-                  height: 100, width: double.infinity, fit: BoxFit.cover),
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.file(imageFile!,
+                      height: 100, width: double.infinity, fit: BoxFit.cover),
+                ),
+                Positioned(
+                  top: 5,
+                  right: 5,
+                  child: GestureDetector(
+                    onTap: onRemoveImage,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: const BoxDecoration(
+                        color: AppColors.error,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close_rounded,
+                          color: Colors.white, size: 14),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 12),

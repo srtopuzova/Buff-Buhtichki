@@ -17,6 +17,13 @@ class OcrMedicationResult {
     this.dosage,
     this.manufacturer,
   });
+
+  bool get hasAnyField =>
+      name != null ||
+      expiryRaw != null ||
+      activeSubstance != null ||
+      dosage != null ||
+      manufacturer != null;
 }
 
 class OcrPrescribedItem {
@@ -136,14 +143,14 @@ class OcrService {
     content.add({
       'type': 'text',
       'text':
-          '''You are a pharmacy assistant. Analyze the medication box image(s) and extract:
-1. Medication name (brand name preferred, include generic if visible)
-2. Expiry date (exact text as printed, e.g. "12/2026", "EXP: 06/2025")
-3. Active substance / generic name
-4. Dosage strength (e.g. "500mg", "10mg/5ml")
-5. Manufacturer name
+          '''You are a pharmacy assistant. Analyze the medication box image(s) and extract the following information.
 
-Respond ONLY with a JSON object in this exact format (use null for missing fields):
+Rules:
+- Prefer Latin/English characters for the name. If only Cyrillic text is visible, provide a Latin transliteration.
+- For expiry_raw: return ONLY the date portion as printed (e.g. "06/2025", "12.2026"), WITHOUT any prefixes such as "EXP:", "Годен до:", or "Валиден до:". If the expiry date is partially visible or unreadable, return null — do NOT guess.
+- Return null for any field you cannot confidently identify.
+
+Respond ONLY with a JSON object in this exact format:
 {
   "name": "...",
   "expiry_raw": "...",
@@ -155,12 +162,15 @@ Respond ONLY with a JSON object in this exact format (use null for missing field
 
     String? raw = await _askClaude(
       content: content,
-      model: AppConstants.claudeModelFast,
+      model: AppConstants.claudeModelSmart,
     );
 
     if (raw != null) {
       final result = _parseMedicationJson(raw);
-      if (result != null) return result;
+      // Only accept if at least one field was extracted; otherwise fall through
+      // to individual-image fallback (avoids returning an all-null result as
+      // a "success" when the combined call found nothing useful).
+      if (result != null && result.hasAnyField) return result;
     }
 
     // Fallback: try each image individually and merge
@@ -178,6 +188,10 @@ Respond ONLY with a JSON object in this exact format (use null for missing field
         {
           'type': 'text',
           'text': '''Extract medication details from this image.
+Rules:
+- Prefer Latin characters. Transliterate Cyrillic names to Latin if needed.
+- For expiry_raw: return ONLY the date portion (e.g. "06/2025"), without any prefix. Return null if the date is unclear or partially visible.
+
 Respond ONLY with JSON:
 {
   "name": "...",
@@ -191,7 +205,7 @@ Respond ONLY with JSON:
 
       final singleRaw = await _askClaude(
         content: singleContent,
-        model: AppConstants.claudeModelFast,
+        model: AppConstants.claudeModelSmart,
       );
 
       if (singleRaw != null) {
@@ -203,6 +217,42 @@ Respond ONLY with JSON:
     }
 
     return merged ?? const OcrMedicationResult();
+  }
+
+  /// Extract the indications / usage text from the back of a medication box.
+  /// Returns a single concise sentence, or null if nothing found.
+  Future<String?> extractIndications(File backImage) async {
+    final content = <Map<String, dynamic>>[
+      {
+        'type': 'image',
+        'source': {
+          'type': 'base64',
+          'media_type': _mimeType(backImage),
+          'data': _encodeImage(backImage),
+        },
+      },
+      {
+        'type': 'text',
+        'text':
+            '''Look at this medication box image and find the indications / uses section — what conditions or symptoms this medication is intended to treat.
+
+Return ONE concise sentence in English summarising the indications, e.g.:
+"Used for relief of mild to moderate pain, headache, fever, and cold symptoms."
+
+If you cannot find any indications text, respond with exactly: null''',
+      },
+    ];
+
+    final raw = await _askClaude(
+      content: content,
+      model: AppConstants.claudeModelSmart,
+      maxTokens: 128,
+    );
+
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.toLowerCase() == 'null' || trimmed.isEmpty) return null;
+    return trimmed;
   }
 
   /// Extract prescription info from an image using the smarter model.

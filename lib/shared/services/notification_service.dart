@@ -214,16 +214,16 @@ class NotificationService {
   }
 
   int _expiryNotificationId(String medicationId, int days) {
-    // Stable int id derived from string hash + days offset
+    // 100 000-slot space per base — ~100× less collision risk than 10 000.
     return (AppConstants.expiryNotificationBase +
-            medicationId.hashCode.abs() % 10000 +
+            medicationId.hashCode.abs() % 100000 +
             days)
         .abs();
   }
 
   int _doseNotificationId(String prescriptionId) {
     return (AppConstants.doseNotificationBase +
-            prescriptionId.hashCode.abs() % 10000)
+            prescriptionId.hashCode.abs() % 100000)
         .abs();
   }
 }

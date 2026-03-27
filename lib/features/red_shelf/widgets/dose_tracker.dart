@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:medshelf/core/theme/app_colors.dart';
 import 'package:medshelf/features/red_shelf/models/prescription_model.dart';
 
+class _WeekSlot {
+  final DateTime date;
+  final DoseRecord? record;
+  const _WeekSlot(this.date, this.record);
+}
+
 class DoseTracker extends StatelessWidget {
   final PrescriptionModel prescription;
   final VoidCallback onTaken;
@@ -31,30 +37,33 @@ class DoseTracker extends StatelessWidget {
         d.timestamp.day == today.day);
   }
 
-  // One entry per day for the last 7 days (most recent record wins)
-  List<DoseRecord> _lastSevenDays() {
+  // One slot per day for Mon–Sun of the current week.
+  // Days without a record get a null record (shown as empty dot).
+  List<_WeekSlot> _currentWeekSlots() {
     final now = DateTime.now();
-    final result = <DoseRecord>[];
-    for (int i = 6; i >= 0; i--) {
-      final day = DateTime(now.year, now.month, now.day - i);
+    final today = DateTime(now.year, now.month, now.day);
+    // weekday: 1=Mon … 7=Sun
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+
+    return List.generate(7, (i) {
+      final day = monday.add(Duration(days: i));
       final dayRecords = prescription.doseRecords.where((d) =>
           d.timestamp.year == day.year &&
           d.timestamp.month == day.month &&
           d.timestamp.day == day.day);
-      if (dayRecords.isNotEmpty) {
-        // Last record of the day wins
-        result.add(dayRecords.reduce(
-            (a, b) => a.timestamp.isAfter(b.timestamp) ? a : b));
-      }
-    }
-    return result;
+      final record = dayRecords.isEmpty
+          ? null
+          : dayRecords.reduce(
+              (a, b) => a.timestamp.isAfter(b.timestamp) ? a : b);
+      return _WeekSlot(day, record);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final recorded = _hasRecordedToday;
     final taken = _takenToday;
-    final weekDots = _lastSevenDays();
+    final weekSlots = _currentWeekSlots();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -111,18 +120,16 @@ class DoseTracker extends StatelessWidget {
                 ),
             ],
           ),
-          // Weekly history dots
-          if (weekDots.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Text('Last 7 days',
-                style: TextStyle(
-                    color: AppColors.textSecondary, fontSize: 12)),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: weekDots.map((d) => _DayDot(record: d)).toList(),
-            ),
-          ],
+          // Weekly history dots — always Mon through Sun
+          const SizedBox(height: 14),
+          const Text('This week',
+              style: TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: weekSlots.map((s) => _DayDot(slot: s)).toList(),
+          ),
           // Action buttons — only if not yet recorded today
           if (prescription.isActive && !recorded) ...[
             const SizedBox(height: 14),
@@ -167,34 +174,53 @@ class DoseTracker extends StatelessWidget {
 }
 
 class _DayDot extends StatelessWidget {
-  final DoseRecord record;
+  final _WeekSlot slot;
 
-  const _DayDot({required this.record});
+  const _DayDot({required this.slot});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: record.taken ? AppColors.success : AppColors.errorLight,
-            shape: BoxShape.circle,
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isFuture = slot.date.isAfter(today);
+    final record = slot.record;
+
+    final Color bgColor;
+    final Widget? dotChild;
+
+    if (record != null) {
+      bgColor = record.taken ? AppColors.success : AppColors.errorLight;
+      dotChild = Icon(
+        record.taken ? Icons.check_rounded : Icons.close_rounded,
+        size: 16,
+        color: record.taken ? Colors.white : AppColors.error,
+      );
+    } else {
+      bgColor = AppColors.divider;
+      dotChild = null;
+    }
+
+    return Opacity(
+      opacity: isFuture && record == null ? 0.4 : 1.0,
+      child: Column(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+            ),
+            child: dotChild,
           ),
-          child: Icon(
-            record.taken ? Icons.check_rounded : Icons.close_rounded,
-            size: 16,
-            color: record.taken ? Colors.white : AppColors.error,
+          const SizedBox(height: 4),
+          Text(
+            _dayLabel(slot.date),
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 10),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _dayLabel(record.timestamp),
-          style: const TextStyle(
-              color: AppColors.textSecondary, fontSize: 10),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

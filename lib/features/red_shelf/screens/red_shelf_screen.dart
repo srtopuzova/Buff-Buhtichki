@@ -121,13 +121,10 @@ class _RedShelfScreenState extends State<RedShelfScreen>
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/home/red-shelf/add'),
         backgroundColor: AppColors.redShelf,
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text('Add',
-            style: TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w600)),
+        child: const Icon(Icons.add_rounded, color: Colors.white),
       ),
     );
   }

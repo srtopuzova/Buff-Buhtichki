@@ -151,12 +151,10 @@ class _MedShelfScreenState extends State<MedShelfScreen>
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/home/med-shelf/add'),
         backgroundColor: AppColors.medShelf,
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text('Add',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+        child: const Icon(Icons.add_rounded, color: Colors.white),
       ),
     );
   }

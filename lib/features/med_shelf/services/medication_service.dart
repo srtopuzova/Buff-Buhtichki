@@ -133,14 +133,13 @@ class MedicationService {
     required MedicationBatch batch,
     required String medicationName,
   }) async {
-    final doc = await _col.doc(medicationId).get();
-    if (!doc.exists) return;
+    final doc = _col.doc(medicationId);
+    final snap = await doc.get();
+    if (!snap.exists) return;
 
-    final med = MedicationModel.fromFirestore(doc);
-    final updatedBatches = [...med.batches, batch];
-
-    await _col.doc(medicationId).update({
-      'batches': updatedBatches.map((b) => b.toMap()).toList(),
+    // arrayUnion is atomic — avoids read-modify-write race condition.
+    await doc.update({
+      'batches': FieldValue.arrayUnion([batch.toMap()]),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
 
@@ -152,6 +151,7 @@ class MedicationService {
   }
 
   /// Remove a box from an existing medication entry.
+  /// Deletes the whole medication document when the last batch is removed.
   Future<void> removeBatch({
     required String medicationId,
     required String batchId,
@@ -160,12 +160,22 @@ class MedicationService {
     final updatedBatches =
         currentBatches.where((b) => b.id != batchId).toList();
 
+    await _notifications.cancelExpiryNotificationsForBatch(batchId);
+
+    if (updatedBatches.isEmpty) {
+      await _col.doc(medicationId).delete();
+      try {
+        await _storage
+            .ref('${AppConstants.medicationImagesPath}/$medicationId.jpg')
+            .delete();
+      } catch (_) {}
+      return;
+    }
+
     await _col.doc(medicationId).update({
       'batches': updatedBatches.map((b) => b.toMap()).toList(),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
-
-    await _notifications.cancelExpiryNotificationsForBatch(batchId);
   }
 
   Future<String> _uploadImage(File imageFile, String id) async {

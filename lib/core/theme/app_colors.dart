@@ -18,6 +18,9 @@ class AppColors {
   static const Color pharmacyLight = Color(0xFFF5F3FF);
   static const Color pharmacyDark = Color(0xFF6D28D9);
 
+  static const Color aiChat = Color(0xFF0891B2);
+  static const Color aiChatLight = Color(0xFFE0F2FE);
+
   // Text
   static const Color textPrimary = Color(0xFF1E293B);
   static const Color textSecondary = Color(0xFF64748B);
@@ -57,6 +60,12 @@ class AppColors {
 
   static LinearGradient get pharmacyGradient => const LinearGradient(
         colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+
+  static LinearGradient get aiChatGradient => const LinearGradient(
+        colors: [Color(0xFF0891B2), Color(0xFF0E7490)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       );

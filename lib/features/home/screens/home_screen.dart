@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:medshelf/core/theme/app_colors.dart';
+import 'package:medshelf/features/ai_chat/screens/ai_chat_screen.dart';
 import 'package:medshelf/features/med_shelf/screens/med_shelf_screen.dart';
 import 'package:medshelf/features/pharmacy/screens/pharmacy_screen.dart';
 import 'package:medshelf/features/profile/screens/profile_screen.dart';
@@ -37,6 +38,12 @@ class _HomeScreenState extends State<HomeScreen> {
       color: AppColors.pharmacy,
     ),
     _TabItem(
+      label: 'Advisor',
+      icon: Icons.medical_services_outlined,
+      activeIcon: Icons.medical_services_rounded,
+      color: AppColors.aiChat,
+    ),
+    _TabItem(
       label: 'Profile',
       icon: Icons.person_outline_rounded,
       activeIcon: Icons.person_rounded,
@@ -48,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
     MedShelfScreen(),
     RedShelfScreen(),
     PharmacyScreen(),
+    AiChatScreen(),
     ProfileScreen(),
   ];
 

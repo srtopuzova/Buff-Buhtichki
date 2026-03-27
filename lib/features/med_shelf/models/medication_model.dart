@@ -94,6 +94,8 @@ class MedicationModel {
   final String? activeSubstance;
   final String? dosage;
   final String? manufacturer;
+  /// Usage / indications extracted from the back of the box at scan time.
+  final String? indications;
   final List<MedicationBatch> batches;
   final MedicationCategory category;
   final String? imageUrl;
@@ -108,6 +110,7 @@ class MedicationModel {
     this.activeSubstance,
     this.dosage,
     this.manufacturer,
+    this.indications,
     required this.batches,
     this.category = MedicationCategory.other,
     this.imageUrl,
@@ -175,6 +178,7 @@ class MedicationModel {
       activeSubstance: d['activeSubstance'] as String?,
       dosage: d['dosage'] as String?,
       manufacturer: d['manufacturer'] as String?,
+      indications: d['indications'] as String?,
       batches: batches,
       category:
           MedicationCategoryExt.fromString(d['category'] as String? ?? 'other'),
@@ -191,6 +195,7 @@ class MedicationModel {
         'activeSubstance': activeSubstance,
         'dosage': dosage,
         'manufacturer': manufacturer,
+        'indications': indications,
         'batches': batches.map((b) => b.toMap()).toList(),
         'category': category.name,
         'imageUrl': imageUrl,
@@ -206,6 +211,7 @@ class MedicationModel {
     String? activeSubstance,
     String? dosage,
     String? manufacturer,
+    String? indications,
     List<MedicationBatch>? batches,
     MedicationCategory? category,
     String? imageUrl,
@@ -220,6 +226,7 @@ class MedicationModel {
       activeSubstance: activeSubstance ?? this.activeSubstance,
       dosage: dosage ?? this.dosage,
       manufacturer: manufacturer ?? this.manufacturer,
+      indications: indications ?? this.indications,
       batches: batches ?? this.batches,
       category: category ?? this.category,
       imageUrl: imageUrl ?? this.imageUrl,

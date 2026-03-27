@@ -31,8 +31,11 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
 
   DateTime? _expiryDate;
   MedicationCategory _category = MedicationCategory.tablet;
-  final List<File> _scannedImages = [];
-  File? _primaryImage;
+
+  // Slot 0 = front, slot 1 = back — both required before saving.
+  final _imageSlots = <File?>[null, null];
+  String? _indications;
+
   bool _isScanning = false;
   bool _isSaving = false;
   String? _scanError;
@@ -51,7 +54,7 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
     super.dispose();
   }
 
-  Future<void> _pickAndScanImage(ImageSource source) async {
+  Future<void> _pickImage(int slot, ImageSource source) async {
     final picked = await _picker.pickImage(
       source: source,
       imageQuality: 85,
@@ -59,17 +62,37 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
     );
     if (picked == null) return;
 
-    final file = File(picked.path);
     setState(() {
-      _scannedImages.add(file);
-      _primaryImage ??= file;
+      _imageSlots[slot] = File(picked.path);
       _isScanning = true;
       _scanError = null;
     });
 
+    await _runOcrScan();
+  }
+
+  void _removeImage(int slot) {
+    setState(() => _imageSlots[slot] = null);
+  }
+
+  Future<void> _runOcrScan() async {
+    final images = _imageSlots.whereType<File>().toList();
+    if (images.isEmpty) return;
+
     try {
-      final result = await _ocrService.extractMedicationInfo(_scannedImages);
+      // Run OCR and (if back image is present) indications extraction in parallel.
+      final backImage = _imageSlots[1];
+      final futures = await Future.wait([
+        _ocrService.extractMedicationInfo(images),
+        if (backImage != null) _ocrService.extractIndications(backImage),
+      ]);
+
       if (!mounted) return;
+
+      final result = futures[0] as OcrMedicationResult;
+      final indications =
+          backImage != null ? futures[1] as String? : null;
+
       setState(() {
         if (result.name != null && _nameCtrl.text.isEmpty) {
           _nameCtrl.text = result.name!;
@@ -87,6 +110,7 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
           final parsed = DateHelpers.tryParseExpiry(result.expiryRaw!);
           if (parsed != null) _expiryDate = parsed;
         }
+        if (indications != null) _indications = indications;
         _isScanning = false;
       });
 
@@ -125,6 +149,17 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_imageSlots[0] == null || _imageSlots[1] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please scan both the front and back of the box'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     if (_expiryDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -153,6 +188,7 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
       manufacturer: _manufacturerCtrl.text.trim().isEmpty
           ? null
           : _manufacturerCtrl.text.trim(),
+      indications: _indications,
       batches: [batch],
       category: _category,
       notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
@@ -162,7 +198,7 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
 
     final success = await context.read<MedicationProvider>().addMedication(
           medication: medication,
-          imageFile: _primaryImage,
+          imageFile: _imageSlots[0], // front photo saved as the card image
         );
 
     if (!mounted) return;
@@ -219,16 +255,17 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Scan section
                 _ScanSection(
-                  images: _scannedImages,
+                  frontImage: _imageSlots[0],
+                  backImage: _imageSlots[1],
                   isScanning: _isScanning,
                   scanError: _scanError,
-                  onCamera: () => _pickAndScanImage(ImageSource.camera),
-                  onGallery: () => _pickAndScanImage(ImageSource.gallery),
+                  onPickFront: (src) => _pickImage(0, src),
+                  onPickBack: (src) => _pickImage(1, src),
+                  onRemoveFront: () => _removeImage(0),
+                  onRemoveBack: () => _removeImage(1),
                 ),
                 const SizedBox(height: 20),
-                // Form fields
                 _SectionHeader(title: 'Medication Details'),
                 const SizedBox(height: 12),
                 _buildField(
@@ -272,7 +309,6 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
                   hint: 'e.g. Bayer',
                 ),
                 const SizedBox(height: 16),
-                // Expiry date
                 _SectionHeader(title: 'Expiry Date *'),
                 const SizedBox(height: 8),
                 GestureDetector(
@@ -309,7 +345,6 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Category
                 _SectionHeader(title: 'Category'),
                 const SizedBox(height: 8),
                 _CategorySelector(
@@ -317,7 +352,6 @@ class _AddMedicationScreenState extends State<AddMedicationScreen> {
                   onChanged: (c) => setState(() => _category = c),
                 ),
                 const SizedBox(height: 16),
-                // Notes
                 _buildField(
                   controller: _notesCtrl,
                   label: 'Notes',
@@ -389,19 +423,27 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+// ─── Scan section ─────────────────────────────────────────────────────────────
+
 class _ScanSection extends StatelessWidget {
-  final List<File> images;
+  final File? frontImage;
+  final File? backImage;
   final bool isScanning;
   final String? scanError;
-  final VoidCallback onCamera;
-  final VoidCallback onGallery;
+  final void Function(ImageSource) onPickFront;
+  final void Function(ImageSource) onPickBack;
+  final VoidCallback onRemoveFront;
+  final VoidCallback onRemoveBack;
 
   const _ScanSection({
-    required this.images,
+    required this.frontImage,
+    required this.backImage,
     required this.isScanning,
     required this.scanError,
-    required this.onCamera,
-    required this.onGallery,
+    required this.onPickFront,
+    required this.onPickBack,
+    required this.onRemoveFront,
+    required this.onRemoveBack,
   });
 
   @override
@@ -420,34 +462,40 @@ class _ScanSection extends StatelessWidget {
               Icon(Icons.document_scanner_rounded,
                   color: Colors.white, size: 20),
               SizedBox(width: 8),
-              Text('Scan Box (Optional)',
+              Text('Scan Box',
                   style: TextStyle(
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w700)),
             ],
           ),
-          const SizedBox(height: 6),
-          const Text('Scan up to 2 sides for auto-fill',
+          const SizedBox(height: 4),
+          const Text('Scan front and back for auto-fill',
               style: TextStyle(color: Colors.white70, fontSize: 12)),
-          const SizedBox(height: 12),
-          if (images.isNotEmpty) ...[
-            SizedBox(
-              height: 80,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.file(images[i],
-                      width: 80, height: 80, fit: BoxFit.cover),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _ImageSlot(
+                  label: 'Front',
+                  image: frontImage,
+                  onPick: onPickFront,
+                  onRemove: onRemoveFront,
                 ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ImageSlot(
+                  label: 'Back',
+                  image: backImage,
+                  onPick: onPickBack,
+                  onRemove: onRemoveBack,
+                ),
+              ),
+            ],
+          ),
+          if (isScanning) ...[
             const SizedBox(height: 12),
-          ],
-          if (isScanning)
             const Row(
               children: [
                 SizedBox(
@@ -459,53 +507,112 @@ class _ScanSection extends StatelessWidget {
                 Text('Analysing image...',
                     style: TextStyle(color: Colors.white, fontSize: 13)),
               ],
-            )
-          else ...[
-            if (scanError != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(scanError!,
-                    style: const TextStyle(
-                        color: Colors.orangeAccent, fontSize: 12)),
-              ),
-            if (images.length < 2)
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onCamera,
-                      icon: const Icon(Icons.camera_alt_rounded,
-                          color: Colors.white, size: 16),
-                      label: const Text('Camera',
-                          style: TextStyle(color: Colors.white, fontSize: 13)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white54),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onGallery,
-                      icon: const Icon(Icons.photo_library_rounded,
-                          color: Colors.white, size: 16),
-                      label: const Text('Gallery',
-                          style: TextStyle(color: Colors.white, fontSize: 13)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white54),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            ),
+          ] else if (scanError != null) ...[
+            const SizedBox(height: 8),
+            Text(scanError!,
+                style:
+                    const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
           ],
         ],
       ),
     );
   }
 }
+
+class _ImageSlot extends StatelessWidget {
+  final String label;
+  final File? image;
+  final void Function(ImageSource) onPick;
+  final VoidCallback onRemove;
+
+  const _ImageSlot({
+    required this.label,
+    required this.image,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        if (image != null)
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.file(image!,
+                    width: double.infinity,
+                    height: 100,
+                    fit: BoxFit.cover),
+              ),
+              Positioned(
+                top: 5,
+                right: 5,
+                child: GestureDetector(
+                  onTap: onRemove,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: const BoxDecoration(
+                      color: AppColors.error,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close_rounded,
+                        color: Colors.white, size: 14),
+                  ),
+                ),
+              ),
+            ],
+          )
+        else
+          Container(
+            width: double.infinity,
+            height: 100,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white38, width: 1.5),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.add_photo_alternate_rounded,
+                    color: Colors.white54, size: 26),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _iconBtn(Icons.camera_alt_rounded,
+                        () => onPick(ImageSource.camera)),
+                    const SizedBox(width: 16),
+                    _iconBtn(Icons.photo_library_rounded,
+                        () => onPick(ImageSource.gallery)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 6),
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _iconBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Icon(icon, color: Colors.white70, size: 20),
+    );
+  }
+}
+
+// ─── Category selector ────────────────────────────────────────────────────────
 
 class _CategorySelector extends StatelessWidget {
   final MedicationCategory selected;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:medshelf/features/med_shelf/models/medication_model.dart';
@@ -10,6 +11,7 @@ class MedicationProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   String? _currentUserId;
+  StreamSubscription<List<MedicationModel>>? _subscription;
 
   List<MedicationModel> get medications => List.unmodifiable(_medications);
   bool get isLoading => _isLoading;
@@ -27,7 +29,8 @@ class MedicationProvider extends ChangeNotifier {
   void initialize(String userId) {
     if (_currentUserId == userId) return;
     _currentUserId = userId;
-    _service.watchMedications(userId).listen(
+    _subscription?.cancel();
+    _subscription = _service.watchMedications(userId).listen(
       (list) {
         _medications = list;
         notifyListeners();
@@ -37,6 +40,12 @@ class MedicationProvider extends ChangeNotifier {
         notifyListeners();
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 
   Future<bool> addMedication({

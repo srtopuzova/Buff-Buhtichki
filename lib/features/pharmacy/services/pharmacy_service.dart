@@ -18,43 +18,60 @@ class PharmacyService {
     final lat = position.latitude;
     final lon = position.longitude;
 
-    try {
-      final pharmacies = await _fetchFromOverpass(lat, lon, radius: 3000);
+    // Overpass call throws on network failure — let it propagate.
+    // Only expand radius if the query succeeds but returns 0 results.
+    for (final radius in [1500, 3000, 5000]) {
+      final pharmacies = await _fetchFromOverpass(lat, lon, radius: radius);
       if (pharmacies.isNotEmpty) {
-        final withDist = pharmacies.map((p) => p.copyWith(
-              distanceMeters: _locationService.distanceBetween(
-                  lat, lon, p.latitude, p.longitude),
-            )).toList();
+        final withDist = pharmacies
+            .map((p) => p.copyWith(
+                  distanceMeters: _locationService.distanceBetween(
+                      lat, lon, p.latitude, p.longitude),
+                ))
+            .toList();
         withDist.sort((a, b) =>
             (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
         return withDist.take(limit).toList();
       }
-    } catch (e) {
-      debugPrint('Overpass API failed: $e');
     }
-
     return [];
   }
+
+  static const _overpassMirrors = [
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  ];
 
   Future<List<PharmacyModel>> _fetchFromOverpass(
     double lat,
     double lon, {
-    int radius = 3000,
+    int radius = 1500,
   }) async {
+    // Nodes-only query — faster and less likely to time out on the server
     final query =
-        '[out:json][timeout:15];(node[amenity=pharmacy](around:$radius,$lat,$lon);'
-        'way[amenity=pharmacy](around:$radius,$lat,$lon););out center 40;';
+        '[out:json][timeout:10];node[amenity=pharmacy](around:$radius,$lat,$lon);out 30;';
 
-    final response = await http
-        .post(
-          Uri.parse('https://overpass-api.de/api/interpreter'),
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-          body: 'data=${Uri.encodeComponent(query)}',
-        )
-        .timeout(const Duration(seconds: 15));
+    http.Response? response;
+    for (final mirror in _overpassMirrors) {
+      try {
+        response = await http
+            .post(
+              Uri.parse(mirror),
+              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              body: 'data=${Uri.encodeComponent(query)}',
+            )
+            .timeout(const Duration(seconds: 20));
+        if (response.statusCode == 200) break;
+        debugPrint('Overpass mirror $mirror → ${response.statusCode}');
+      } catch (e) {
+        debugPrint('Overpass mirror $mirror failed: $e');
+      }
+    }
 
-    if (response.statusCode != 200) {
-      throw Exception('Overpass API ${response.statusCode}');
+    if (response == null || response.statusCode != 200) {
+      throw Exception('Overpass API ${response?.statusCode ?? 'unreachable'}');
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;

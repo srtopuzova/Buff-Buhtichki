@@ -108,15 +108,30 @@ class PrescriptionService {
     }
   }
 
-  Future<void> markPickedUp(String prescriptionId) async {
+  Future<void> markPickedUp(PrescriptionModel prescription) async {
     await _firestore
         .collection(AppConstants.prescriptionsCollection)
-        .doc(prescriptionId)
+        .doc(prescription.id)
         .update({
       'status': PrescriptionStatus.active.name,
       'pickedUpAt': Timestamp.fromDate(DateTime.now()),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
+
+    // Schedule per-item notifications for any items that already have a reminder set
+    for (int i = 0; i < prescription.items.length; i++) {
+      final item = prescription.items[i];
+      if (item.reminderHour != null && item.reminderMinute != null) {
+        await _notifications.scheduleDoseReminderForItem(
+          prescriptionId: prescription.id,
+          itemIndex: i,
+          medicationName: item.name,
+          hour: item.reminderHour!,
+          minute: item.reminderMinute!,
+          instructions: item.instructions,
+        );
+      }
+    }
   }
 
   Future<void> recordDose(String prescriptionId, bool taken) async {
@@ -130,8 +145,39 @@ class PrescriptionService {
     });
   }
 
+  Future<void> setItemReminder({
+    required PrescriptionModel prescription,
+    required int itemIndex,
+    required int hour,
+    required int minute,
+  }) async {
+    final item = prescription.items[itemIndex];
+    final updatedItem = item.copyWith(reminderHour: hour, reminderMinute: minute);
+    final updatedItems = List<PrescribedItem>.from(prescription.items);
+    updatedItems[itemIndex] = updatedItem;
+
+    await _firestore
+        .collection(AppConstants.prescriptionsCollection)
+        .doc(prescription.id)
+        .update({
+      'items': updatedItems.map((i) => i.toMap()).toList(),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+
+    if (prescription.isActive) {
+      await _notifications.scheduleDoseReminderForItem(
+        prescriptionId: prescription.id,
+        itemIndex: itemIndex,
+        medicationName: item.name,
+        hour: hour,
+        minute: minute,
+        instructions: item.instructions,
+      );
+    }
+  }
+
   Future<void> deletePrescription(String prescriptionId) async {
-    await _notifications.cancelDoseReminder(prescriptionId);
+    await _notifications.cancelAllDoseRemindersForPrescription(prescriptionId);
     await _firestore
         .collection(AppConstants.prescriptionsCollection)
         .doc(prescriptionId)

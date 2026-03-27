@@ -86,7 +86,7 @@ class PrescriptionDetailScreen extends StatelessWidget {
                   if (rx.isPending) ...[
                     _PendingBanner(
                       onPickedUp: () async {
-                        final success = await provider.markPickedUp(rx.id);
+                        final success = await provider.markPickedUp(rx);
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -113,7 +113,7 @@ class PrescriptionDetailScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                   ],
                   // All medications list
-                  _MedicationsList(items: rx.items),
+                  _MedicationsList(prescription: rx),
                   const SizedBox(height: 16),
                   // Prescription info card
                   _InfoCard(rx: rx),
@@ -229,11 +229,12 @@ class _PendingBanner extends StatelessWidget {
 }
 
 class _MedicationsList extends StatelessWidget {
-  final List<PrescribedItem> items;
-  const _MedicationsList({required this.items});
+  final PrescriptionModel prescription;
+  const _MedicationsList({required this.prescription});
 
   @override
   Widget build(BuildContext context) {
+    final items = prescription.items;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -262,7 +263,11 @@ class _MedicationsList extends StatelessWidget {
           for (int i = 0; i < items.length; i++) ...[
             if (i > 0)
               const Divider(height: 20),
-            _MedItemRow(index: i, item: items[i]),
+            _MedItemRow(
+              index: i,
+              item: items[i],
+              prescription: prescription,
+            ),
           ],
         ],
       ),
@@ -273,7 +278,12 @@ class _MedicationsList extends StatelessWidget {
 class _MedItemRow extends StatelessWidget {
   final int index;
   final PrescribedItem item;
-  const _MedItemRow({required this.index, required this.item});
+  final PrescriptionModel prescription;
+  const _MedItemRow({
+    required this.index,
+    required this.item,
+    required this.prescription,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -309,6 +319,12 @@ class _MedItemRow extends StatelessWidget {
                     fontWeight: FontWeight.w600),
               ),
             ),
+            if (prescription.isActive)
+              _ReminderButton(
+                prescription: prescription,
+                itemIndex: index,
+                item: item,
+              ),
           ],
         ),
         if (item.dosage != null || item.frequency != null) ...[
@@ -344,6 +360,93 @@ class _MedItemRow extends StatelessWidget {
         ],
       ],
     );
+  }
+}
+
+class _ReminderButton extends StatelessWidget {
+  final PrescriptionModel prescription;
+  final int itemIndex;
+  final PrescribedItem item;
+  const _ReminderButton({
+    required this.prescription,
+    required this.itemIndex,
+    required this.item,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasReminder =
+        item.reminderHour != null && item.reminderMinute != null;
+    final timeStr = hasReminder
+        ? '${item.reminderHour!.toString().padLeft(2, '0')}:${item.reminderMinute!.toString().padLeft(2, '0')}'
+        : null;
+
+    return GestureDetector(
+      onTap: () => _pickTime(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: hasReminder ? AppColors.redShelfLight : AppColors.background,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: hasReminder
+                ? AppColors.redShelf.withValues(alpha: 0.4)
+                : AppColors.divider,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              hasReminder ? Icons.alarm_rounded : Icons.alarm_add_rounded,
+              size: 14,
+              color:
+                  hasReminder ? AppColors.redShelf : AppColors.textSecondary,
+            ),
+            if (timeStr != null) ...[
+              const SizedBox(width: 4),
+              Text(
+                timeStr,
+                style: const TextStyle(
+                    color: AppColors.redShelf,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickTime(BuildContext context) async {
+    final initial = item.reminderHour != null
+        ? TimeOfDay(hour: item.reminderHour!, minute: item.reminderMinute!)
+        : TimeOfDay.now();
+
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      helpText: 'Set reminder for ${item.name}',
+    );
+    if (picked == null || !context.mounted) return;
+
+    final ok = await context.read<PrescriptionProvider>().setItemReminder(
+          prescription: prescription,
+          itemIndex: itemIndex,
+          hour: picked.hour,
+          minute: picked.minute,
+        );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Reminder set for ${item.name} at ${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}'
+              : 'Failed to set reminder'),
+          backgroundColor: ok ? AppColors.success : AppColors.error,
+        ),
+      );
+    }
   }
 }
 

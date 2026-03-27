@@ -135,18 +135,11 @@ class NotificationService {
         ? instructions
         : 'Time to take your medication.';
 
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduledDate =
-        tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
-    if (scheduledDate.isBefore(now)) {
-      scheduledDate = scheduledDate.add(const Duration(days: 1));
-    }
-
     await _plugin.zonedSchedule(
       id,
       'Dose reminder: $medicationName',
       body,
-      scheduledDate,
+      _nextInstanceOfTime(hour, minute),
       NotificationDetails(
         android: AndroidNotificationDetails(
           'dose_channel',
@@ -172,6 +165,66 @@ class NotificationService {
 
   Future<void> cancelDoseReminder(String prescriptionId) async {
     await _plugin.cancel(_doseNotificationId(prescriptionId));
+  }
+
+  // ─── Per-item dose notifications ─────────────────────────────────────────
+
+  /// Schedule a daily reminder for a single item in a prescription.
+  Future<void> scheduleDoseReminderForItem({
+    required String prescriptionId,
+    required int itemIndex,
+    required String medicationName,
+    required int hour,
+    required int minute,
+    String? instructions,
+  }) async {
+    await cancelDoseReminderForItem(prescriptionId, itemIndex);
+
+    final id = _doseNotificationIdForItem(prescriptionId, itemIndex);
+    final body = instructions != null && instructions.isNotEmpty
+        ? instructions
+        : 'Time to take your medication.';
+
+    await _plugin.zonedSchedule(
+      id,
+      'Dose reminder: $medicationName',
+      body,
+      _nextInstanceOfTime(hour, minute),
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          'dose_channel',
+          'Dose Reminders',
+          channelDescription: 'Daily medication dose reminders',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          color: const Color(0xFFDC2626),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+  }
+
+  Future<void> cancelDoseReminderForItem(
+      String prescriptionId, int itemIndex) async {
+    await _plugin.cancel(_doseNotificationIdForItem(prescriptionId, itemIndex));
+  }
+
+  /// Cancels the whole-prescription reminder plus up to [maxItems] per-item reminders.
+  Future<void> cancelAllDoseRemindersForPrescription(
+      String prescriptionId, {int maxItems = 20}) async {
+    await cancelDoseReminder(prescriptionId);
+    for (int i = 0; i < maxItems; i++) {
+      await cancelDoseReminderForItem(prescriptionId, i);
+    }
   }
 
   Future<void> cancelAll() async {
@@ -213,6 +266,19 @@ class NotificationService {
     );
   }
 
+  /// Returns the next occurrence of [hour]:[minute] in local device time,
+  /// converted to a [tz.TZDateTime] preserving the correct UTC instant.
+  tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
+    final now = DateTime.now();
+    var scheduled = DateTime(now.year, now.month, now.day, hour, minute);
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    // Convert local DateTime → tz.TZDateTime via epoch ms (preserves offset).
+    return tz.TZDateTime.fromMillisecondsSinceEpoch(
+        tz.local, scheduled.millisecondsSinceEpoch);
+  }
+
   int _expiryNotificationId(String medicationId, int days) {
     // 100 000-slot space per base — ~100× less collision risk than 10 000.
     return (AppConstants.expiryNotificationBase +
@@ -224,6 +290,12 @@ class NotificationService {
   int _doseNotificationId(String prescriptionId) {
     return (AppConstants.doseNotificationBase +
             prescriptionId.hashCode.abs() % 100000)
+        .abs();
+  }
+
+  int _doseNotificationIdForItem(String prescriptionId, int itemIndex) {
+    return ('${prescriptionId}_item_$itemIndex'.hashCode.abs() % 500000 +
+            AppConstants.doseNotificationBase)
         .abs();
   }
 }

@@ -54,7 +54,7 @@ class _PharmacyScreenState extends State<PharmacyScreen> {
                         const SizedBox(height: 4),
                         Text(
                           provider.hasLocation
-                              ? '10 nearest pharmacies'
+                              ? '${provider.pharmacies.length} nearest pharmacies'
                               : 'Enable location for distance info',
                           style: const TextStyle(
                               color: Colors.white70, fontSize: 14),

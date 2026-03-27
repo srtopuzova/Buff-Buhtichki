@@ -115,8 +115,8 @@ class _RedShelfScreenState extends State<RedShelfScreen>
               prescriptions: pending,
               emptyMessage: 'No pending prescriptions',
               emptySubtitle: 'All prescriptions have been picked up',
-              onPickedUp: (id) =>
-                  context.read<PrescriptionProvider>().markPickedUp(id),
+              onPickedUp: (rx) =>
+                  context.read<PrescriptionProvider>().markPickedUp(rx),
             ),
           ],
         ),
@@ -134,7 +134,7 @@ class _RxList extends StatelessWidget {
   final List<PrescriptionModel> prescriptions;
   final String emptyMessage;
   final String emptySubtitle;
-  final Future<bool> Function(String id)? onPickedUp;
+  final Future<bool> Function(PrescriptionModel rx)? onPickedUp;
 
   const _RxList({
     required this.prescriptions,
@@ -163,7 +163,7 @@ class _RxList extends StatelessWidget {
           onTap: () =>
               context.push('/home/red-shelf/${rx.id}'),
           onPickedUp: onPickedUp != null
-              ? () => onPickedUp!(rx.id)
+              ? () => onPickedUp!(rx)
               : null,
         );
       },

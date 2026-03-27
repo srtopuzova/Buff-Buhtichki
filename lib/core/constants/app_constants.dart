@@ -7,6 +7,11 @@ class AppConstants {
   static const String claudeModelSmart = 'claude-sonnet-4-6';
   static const String claudeApiUrl = 'https://api.anthropic.com/v1/messages';
 
+  // Google Places API (New)
+  static const String googleMapsApiKey = Secrets.googleMapsApiKey;
+  static const String googlePlacesUrl =
+      'https://places.googleapis.com/v1/places:searchNearby';
+
   // App
   static const String appName = 'MedShelf';
   static const String appVersion = '1.0.0';

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:medshelf/core/constants/app_constants.dart';
 import 'package:medshelf/features/pharmacy/models/pharmacy_model.dart';
 import 'package:medshelf/shared/services/location_service.dart';
 
@@ -18,117 +19,96 @@ class PharmacyService {
     final lat = position.latitude;
     final lon = position.longitude;
 
-    // Overpass call throws on network failure — let it propagate.
-    // Only expand radius if the query succeeds but returns 0 results.
-    for (final radius in [1500, 3000, 5000]) {
-      final pharmacies = await _fetchFromOverpass(lat, lon, radius: radius);
-      if (pharmacies.isNotEmpty) {
-        final withDist = pharmacies
-            .map((p) => p.copyWith(
-                  distanceMeters: _locationService.distanceBetween(
-                      lat, lon, p.latitude, p.longitude),
-                ))
-            .toList();
-        withDist.sort((a, b) =>
-            (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
-        return withDist.take(limit).toList();
-      }
-    }
-    return [];
+    final pharmacies = await _fetchFromGooglePlaces(lat, lon, limit: limit);
+
+    final withDist = pharmacies
+        .map((p) => p.copyWith(
+              distanceMeters: _locationService.distanceBetween(
+                  lat, lon, p.latitude, p.longitude),
+            ))
+        .toList();
+    withDist.sort(
+        (a, b) => (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
+    return withDist;
   }
 
-  static const _overpassMirrors = [
-    'https://overpass.kumi.systems/api/interpreter',
-    'https://overpass.private.coffee/api/interpreter',
-    'https://overpass-api.de/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  ];
-
-  Future<List<PharmacyModel>> _fetchFromOverpass(
+  Future<List<PharmacyModel>> _fetchFromGooglePlaces(
     double lat,
     double lon, {
-    int radius = 1500,
+    int limit = 10,
   }) async {
-    // Nodes-only query — faster and less likely to time out on the server
-    final query =
-        '[out:json][timeout:10];node[amenity=pharmacy](around:$radius,$lat,$lon);out 30;';
+    final fieldMask = [
+      'places.id',
+      'places.displayName',
+      'places.formattedAddress',
+      'places.location',
+      'places.nationalPhoneNumber',
+      'places.regularOpeningHours',
+    ].join(',');
 
-    http.Response? response;
-    for (final mirror in _overpassMirrors) {
-      try {
-        response = await http
-            .post(
-              Uri.parse(mirror),
-              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-              body: 'data=${Uri.encodeComponent(query)}',
-            )
-            .timeout(const Duration(seconds: 20));
-        if (response.statusCode == 200) break;
-        debugPrint('Overpass mirror $mirror → ${response.statusCode}');
-      } catch (e) {
-        debugPrint('Overpass mirror $mirror failed: $e');
-      }
-    }
+    final response = await http
+        .post(
+          Uri.parse(AppConstants.googlePlacesUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': AppConstants.googleMapsApiKey,
+            'X-Goog-FieldMask': fieldMask,
+          },
+          body: jsonEncode({
+            'includedTypes': ['pharmacy'],
+            'maxResultCount': 20,
+            'rankPreference': 'DISTANCE',
+            'locationRestriction': {
+              'circle': {
+                'center': {'latitude': lat, 'longitude': lon},
+                'radius': 5000.0,
+              },
+            },
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
 
-    if (response == null || response.statusCode != 200) {
-      throw Exception('Overpass API ${response?.statusCode ?? 'unreachable'}');
+    if (response.statusCode != 200) {
+      debugPrint('Google Places ${response.statusCode}: ${response.body}');
+      throw Exception('Google Places API ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final elements = data['elements'] as List<dynamic>;
+    final places = (data['places'] as List<dynamic>?) ?? [];
 
-    final result = <PharmacyModel>[];
-    for (final e in elements) {
-      final tags = (e['tags'] as Map<String, dynamic>?) ?? {};
+    return places.map((p) => _parsePlace(p as Map<String, dynamic>)).toList();
+  }
 
-      final name = tags['name'] as String? ??
-          tags['brand'] as String? ??
-          'Аптека';
+  PharmacyModel _parsePlace(Map<String, dynamic> p) {
+    final name =
+        (p['displayName'] as Map<String, dynamic>?)?['text'] as String? ??
+            'Аптека';
+    final address = p['formattedAddress'] as String? ?? '';
+    final phone = p['nationalPhoneNumber'] as String? ?? '';
+    final lat = (p['location']?['latitude'] as num).toDouble();
+    final lon = (p['location']?['longitude'] as num).toDouble();
 
-      final phone = tags['phone'] as String? ??
-          tags['contact:phone'] as String? ??
-          tags['contact:mobile'] as String? ??
-          '';
+    // Detect 24/7: a period with open but no close time
+    final hours = p['regularOpeningHours'] as Map<String, dynamic>?;
+    final periods = (hours?['periods'] as List<dynamic>?) ?? [];
+    final isOpen24h = periods.any((period) {
+      final m = period as Map<String, dynamic>;
+      return m['close'] == null;
+    });
+    final weekdayDescriptions =
+        (hours?['weekdayDescriptions'] as List<dynamic>?)
+            ?.map((e) => e as String)
+            .join('; ');
 
-      final openHours = tags['opening_hours'] as String?;
-      final isOpen24h =
-          openHours == '24/7' || openHours == 'Mo-Su 00:00-24:00';
-
-      // Coordinates
-      double? elat, elon;
-      if (e['type'] == 'node') {
-        elat = (e['lat'] as num?)?.toDouble();
-        elon = (e['lon'] as num?)?.toDouble();
-      } else if (e['center'] != null) {
-        elat = (e['center']['lat'] as num?)?.toDouble();
-        elon = (e['center']['lon'] as num?)?.toDouble();
-      }
-      if (elat == null || elon == null) continue;
-
-      // Address
-      final street = tags['addr:street'] as String?;
-      final houseNum = tags['addr:housenumber'] as String?;
-      final city = tags['addr:city'] as String? ??
-          tags['addr:town'] as String? ??
-          'София';
-      String address = city;
-      if (street != null) {
-        address = houseNum != null
-            ? '$street $houseNum, $city'
-            : '$street, $city';
-      }
-
-      result.add(PharmacyModel(
-        id: 'osm_${e['id']}',
-        name: name,
-        address: address,
-        phone: phone,
-        latitude: elat,
-        longitude: elon,
-        isOpen24h: isOpen24h,
-        openHours: isOpen24h ? null : openHours,
-      ));
-    }
-    return result;
+    return PharmacyModel(
+      id: p['id'] as String? ?? '',
+      name: name,
+      address: address,
+      phone: phone,
+      latitude: lat,
+      longitude: lon,
+      isOpen24h: isOpen24h,
+      openHours: isOpen24h ? null : weekdayDescriptions,
+    );
   }
 }

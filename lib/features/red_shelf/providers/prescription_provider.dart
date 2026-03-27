@@ -59,9 +59,9 @@ class PrescriptionProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> markPickedUp(String prescriptionId) async {
+  Future<bool> markPickedUp(PrescriptionModel prescription) async {
     try {
-      await _service.markPickedUp(prescriptionId);
+      await _service.markPickedUp(prescription);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -73,6 +73,27 @@ class PrescriptionProvider extends ChangeNotifier {
   Future<bool> recordDose(String prescriptionId, bool taken) async {
     try {
       await _service.recordDose(prescriptionId, taken);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> setItemReminder({
+    required PrescriptionModel prescription,
+    required int itemIndex,
+    required int hour,
+    required int minute,
+  }) async {
+    try {
+      await _service.setItemReminder(
+        prescription: prescription,
+        itemIndex: itemIndex,
+        hour: hour,
+        minute: minute,
+      );
       return true;
     } catch (e) {
       _errorMessage = e.toString();

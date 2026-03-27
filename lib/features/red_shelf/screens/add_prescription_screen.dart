@@ -16,6 +16,7 @@ class _ItemCtrl {
   final TextEditingController frequency = TextEditingController();
   final TextEditingController duration = TextEditingController();
   final TextEditingController instructions = TextEditingController();
+  TimeOfDay? reminderTime;
 
   void dispose() {
     name.dispose();
@@ -44,7 +45,6 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
   bool _isScanning = false;
   bool _isSaving = false;
   String? _scanError;
-  TimeOfDay? _reminderTime;
 
   void _removeImage() => setState(() => _imageFile = null);
 
@@ -124,22 +124,6 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
     });
   }
 
-  Future<void> _pickReminderTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _reminderTime ?? const TimeOfDay(hour: 8, minute: 0),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx)
-              .colorScheme
-              .copyWith(primary: AppColors.redShelf),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked != null) setState(() => _reminderTime = picked);
-  }
-
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -172,6 +156,8 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
               instructions: c.instructions.text.trim().isEmpty
                   ? null
                   : c.instructions.text.trim(),
+              reminderHour: c.reminderTime?.hour,
+              reminderMinute: c.reminderTime?.minute,
             ))
         .toList();
 
@@ -187,8 +173,6 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
           : _patientCtrl.text.trim(),
       status: PrescriptionStatus.pending,
       doseRecords: const [],
-      reminderHour: _reminderTime?.hour,
-      reminderMinute: _reminderTime?.minute,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -308,50 +292,9 @@ class _AddPrescriptionScreenState extends State<AddPrescriptionScreen> {
                     ctrl: _items[i],
                     canRemove: _items.length > 1,
                     onRemove: () => _removeItem(i),
+                    onReminderChanged: (t) =>
+                        setState(() => _items[i].reminderTime = t),
                   ),
-                const SizedBox(height: 16),
-                // Reminder time
-                _label('Daily Reminder (Optional)'),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: _pickReminderTime,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.alarm_rounded,
-                            color: AppColors.redShelf, size: 20),
-                        const SizedBox(width: 10),
-                        Text(
-                          _reminderTime != null
-                              ? _reminderTime!.format(context)
-                              : 'Set reminder time',
-                          style: TextStyle(
-                            color: _reminderTime != null
-                                ? AppColors.textPrimary
-                                : AppColors.textDisabled,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_reminderTime != null)
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _reminderTime = null),
-                            child: const Icon(Icons.close_rounded,
-                                size: 18,
-                                color: AppColors.textSecondary),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 32),
                 SizedBox(
                   width: double.infinity,
@@ -397,12 +340,14 @@ class _MedItemCard extends StatelessWidget {
   final _ItemCtrl ctrl;
   final bool canRemove;
   final VoidCallback onRemove;
+  final void Function(TimeOfDay?) onReminderChanged;
 
   const _MedItemCard({
     required this.index,
     required this.ctrl,
     required this.canRemove,
     required this.onRemove,
+    required this.onReminderChanged,
   });
 
   @override
@@ -522,6 +467,61 @@ class _MedItemCard extends StatelessWidget {
             decoration: const InputDecoration(
                 hintText: 'e.g. take with food, avoid alcohol'),
           ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          _fieldLabel('Daily Reminder (Optional)'),
+          const SizedBox(height: 6),
+          Builder(builder: (context) {
+            final t = ctrl.reminderTime;
+            return GestureDetector(
+              onTap: () async {
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: t ?? const TimeOfDay(hour: 8, minute: 0),
+                  helpText: 'Reminder for ${ctrl.name.text.isEmpty ? 'medication' : ctrl.name.text}',
+                );
+                if (picked != null) onReminderChanged(picked);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: t != null ? AppColors.redShelfLight : AppColors.background,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: t != null
+                        ? AppColors.redShelf.withValues(alpha: 0.4)
+                        : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      t != null ? Icons.alarm_rounded : Icons.alarm_add_rounded,
+                      size: 16,
+                      color: t != null ? AppColors.redShelf : AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      t != null ? t.format(context) : 'Set reminder time',
+                      style: TextStyle(
+                        color: t != null ? AppColors.redShelf : AppColors.textDisabled,
+                        fontSize: 13,
+                        fontWeight: t != null ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (t != null)
+                      GestureDetector(
+                        onTap: () => onReminderChanged(null),
+                        child: const Icon(Icons.close_rounded,
+                            size: 16, color: AppColors.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );

@@ -50,6 +50,7 @@ Future<void> main() async {
 
   try {
     await NotificationService().initialize();
+    await NotificationService().requestPermissions();
   } catch (e) {
     debugPrint('Notification init error: $e');
   }

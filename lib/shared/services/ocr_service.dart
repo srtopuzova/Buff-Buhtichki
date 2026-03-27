@@ -269,7 +269,15 @@ If you cannot find any indications text, respond with exactly: null''',
       {
         'type': 'text',
         'text':
-            '''You are a medical assistant. Carefully read this prescription and extract ALL medications listed, along with doctor and patient info.
+            '''You are a medical assistant reading a handwritten or printed prescription (may be in Bulgarian/Cyrillic or Latin script).
+
+CRITICAL RULES for medication names:
+- Copy the medication name EXACTLY letter-by-letter as it appears on the prescription.
+- Preserve Cyrillic characters if the prescription uses Cyrillic — do NOT transliterate or translate.
+- Do NOT correct, guess, or paraphrase any spelling — transcribe what is physically written.
+- If a name is partially illegible, copy the legible portion and mark unclear letters with "?".
+
+Extract ALL medications listed plus doctor and patient names.
 
 Respond ONLY with a JSON object in this exact format (use null for missing fields):
 {
@@ -277,7 +285,7 @@ Respond ONLY with a JSON object in this exact format (use null for missing field
   "patient_name": "...",
   "medications": [
     {
-      "name": "exact medication name",
+      "name": "copied exactly as written on prescription",
       "dosage": "e.g. 500mg, 1 tablet",
       "frequency": "e.g. twice daily, every 8 hours",
       "duration": "e.g. 7 days, 2 weeks",
@@ -286,7 +294,7 @@ Respond ONLY with a JSON object in this exact format (use null for missing field
   ]
 }
 
-Include every medication listed on the prescription as a separate entry in the array.''',
+Include every medication as a separate entry. Return only the JSON, no extra text.''',
       },
     ];
 

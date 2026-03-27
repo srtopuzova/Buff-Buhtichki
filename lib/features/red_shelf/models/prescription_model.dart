@@ -48,6 +48,8 @@ class PrescribedItem {
   final String? frequency;
   final String? duration;
   final String? instructions;
+  final int? reminderHour;
+  final int? reminderMinute;
 
   const PrescribedItem({
     required this.name,
@@ -55,6 +57,8 @@ class PrescribedItem {
     this.frequency,
     this.duration,
     this.instructions,
+    this.reminderHour,
+    this.reminderMinute,
   });
 
   factory PrescribedItem.fromMap(Map<String, dynamic> map) => PrescribedItem(
@@ -63,6 +67,8 @@ class PrescribedItem {
         frequency: map['frequency'] as String?,
         duration: map['duration'] as String?,
         instructions: map['instructions'] as String?,
+        reminderHour: (map['reminderHour'] as num?)?.toInt(),
+        reminderMinute: (map['reminderMinute'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toMap() => {
@@ -71,7 +77,20 @@ class PrescribedItem {
         'frequency': frequency,
         'duration': duration,
         'instructions': instructions,
+        'reminderHour': reminderHour,
+        'reminderMinute': reminderMinute,
       };
+
+  PrescribedItem copyWith({int? reminderHour, int? reminderMinute}) =>
+      PrescribedItem(
+        name: name,
+        dosage: dosage,
+        frequency: frequency,
+        duration: duration,
+        instructions: instructions,
+        reminderHour: reminderHour ?? this.reminderHour,
+        reminderMinute: reminderMinute ?? this.reminderMinute,
+      );
 }
 
 class PrescriptionModel {
